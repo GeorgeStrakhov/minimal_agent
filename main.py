@@ -86,7 +86,7 @@ async def run_conversation():
         },
         {
             "role": "user",
-            "content": "What's the current weather in London?"
+            "content": "What's the current weather the last city I asked for (use memory for last_city)?"
         }
     ]
 
