@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 from loguru import logger
 from agent import Agent
 import json
-from jsonschema import validate as validate_json
 from jsonschema.exceptions import ValidationError
 
 load_dotenv()
@@ -27,8 +26,8 @@ def get_current_weather(location: str, coordinates: str = None, unit: str = "cel
     """Mock function to return weather data"""
     # This is just a mock implementation
     if coordinates:
-        return f"The weather at coordinates {coordinates} is 32°{'C' if unit == 'celsius' else 'F'} and raining"
-    return f"The weather in {location} is 32°{'C' if unit == 'celsius' else 'F'} and raining"
+        return f"The weather at coordinates {coordinates} is 2°{'C' if unit == 'celsius' else 'F'} and partly cloudy"
+    return f"The weather in {location} is 2°{'C' if unit == 'celsius' else 'F'} and partly cloudy"
 
 def run_conversation():
     logger.info("Starting conversation")
@@ -64,7 +63,7 @@ DO NOT make up or guess any values - you must get real data using the tools."""
         },
         {
             "role": "user",
-            "content": "What's the current weather in Boston? Please include the coordinates in your response."
+            "content": "What's the current weather in New York? Please include the coordinates in your response."
         }
     ]
 
