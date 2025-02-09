@@ -1,29 +1,54 @@
 from openai import OpenAI
 import os
-from typing import List, Dict, Any, Callable, Optional
+from typing import List, Dict, Any, Callable, Optional, Union
 import json
 from loguru import logger
+from jsonschema import validate as validate_json
+from jsonschema.exceptions import ValidationError
 
 class Agent:
     def __init__(
         self,
         base_url: str,
         api_key: str,
-        model: str = "google/gemini-2.0-flash-001"
+        model: str = "google/gemini-2.0-flash-001",
+        max_iterations: int = 10
     ):
         self.client = OpenAI(
             base_url=base_url,
             api_key=api_key,
         )
         self.model = model
-        logger.debug("Agent initialized with model: {}", model)
+        self.max_iterations = max_iterations
+        logger.debug("Agent initialized with model: {} and max_iterations: {}", 
+                    model, max_iterations)
+
+    def _clean_json_response(self, content: str) -> str:
+        """
+        Clean up the response content by removing markdown formatting and other non-JSON elements.
+        """
+        # Remove markdown code block formatting if present
+        if content.startswith('```') and content.endswith('```'):
+            # Remove first line if it contains ```json or similar
+            lines = content.split('\n')
+            if lines[0].startswith('```'):
+                lines = lines[1:]
+            if lines[-1].startswith('```'):
+                lines = lines[:-1]
+            content = '\n'.join(lines)
+        
+        # Remove any leading/trailing whitespace
+        content = content.strip()
+        
+        return content
 
     def run(
         self,
         messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
-        tool_functions: Dict[str, Callable]
-    ) -> str:
+        tool_functions: Dict[str, Callable],
+        json_response: Optional[Dict[str, Any]] = None
+    ) -> Union[str, Dict[str, Any]]:
         """
         Run the conversation with the given messages and tools until a final response is reached.
         
@@ -31,15 +56,35 @@ class Agent:
             messages: List of message dictionaries in OpenAI format
             tools: List of tool definitions in OpenAI format
             tool_functions: Dictionary mapping tool names to their actual functions
+            json_response: Optional JSON schema for validating the response
             
         Returns:
-            The final response from the assistant
+            Either a string response or a JSON object if json_response schema is provided
+            
+        Raises:
+            ValueError: If max iterations reached or unknown tool called
+            ValidationError: If JSON response doesn't match the provided schema
         """
         logger.debug("Starting conversation with {} messages", len(messages))
         logger.debug("Available tools: {}", list(tool_functions.keys()))
 
-        while True:
-            logger.info("Making API call to LLM")
+        if json_response:
+            # Add JSON response requirement to system message
+            system_msg = {
+                "role": "system",
+                "content": (
+                    "You must respond with a valid JSON object in the following format:\n"
+                    f"{json.dumps(json_response, indent=2)}\n"
+                    "Ensure your response is ONLY the JSON object, nothing else."
+                )
+            }
+            messages = [system_msg] + messages
+
+        iterations = 0
+        while iterations < self.max_iterations:
+            iterations += 1
+            logger.info(f"Iteration {iterations}/{self.max_iterations}")
+            
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -49,9 +94,28 @@ class Agent:
 
             response_message = completion.choices[0].message
 
-            # If there's no tool calls, we can return the response
+            # If there's no tool calls, we can process the final response
             if not response_message.tool_calls:
-                logger.info("No tool calls, returning final response")
+                logger.info("No tool calls, processing final response")
+                
+                if json_response:
+                    try:
+                        # Clean up the response before parsing
+                        cleaned_content = self._clean_json_response(response_message.content)
+                        logger.debug("Cleaned content for JSON parsing: {}", cleaned_content)
+                        
+                        # Try to parse the response as JSON
+                        response_content = json.loads(cleaned_content)
+                        # Validate against the schema
+                        validate_json(instance=response_content, schema=json_response)
+                        return response_content
+                    except json.JSONDecodeError as e:
+                        logger.error("Failed to parse response as JSON: {}", e)
+                        raise ValueError(f"Response is not valid JSON: {e}")
+                    except ValidationError as e:
+                        logger.error("JSON validation failed: {}", e)
+                        raise
+                
                 return response_message.content
 
             # Handle tool calls
@@ -64,24 +128,25 @@ class Agent:
                     raise ValueError(f"Unknown tool: {function_name}")
 
                 logger.debug("Handling function call: {}", tool_call)
-                # Parse the arguments
                 function_args = json.loads(tool_call.function.arguments)
                 logger.debug("Function arguments: {}", function_args)
                 
-                # Call the function
                 function = tool_functions[function_name]
                 function_response = function(**function_args)
                 logger.debug("Function response: {}", function_response)
 
-                # Append the function call and result to messages
-                messages.append({
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [tool_call]
-                })
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": function_response
-                })
-                logger.debug("Updated messages: {}", messages) 
+                messages.extend([
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [tool_call]
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": function_response
+                    }
+                ])
+                logger.debug("Updated messages: {}", messages)
+
+        raise ValueError(f"Max iterations ({self.max_iterations}) reached without final response") 

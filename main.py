@@ -3,6 +3,9 @@ import os
 from dotenv import load_dotenv
 from loguru import logger
 from agent import Agent
+import json
+from jsonschema import validate as validate_json
+from jsonschema.exceptions import ValidationError
 
 load_dotenv()
 
@@ -14,23 +17,42 @@ def get_current_weather(location: str, unit: str = "celsius") -> str:
 def run_conversation():
     logger.info("Starting conversation")
     
-    # Initialize the agent
+    # Initialize the agent with custom max_iterations
     agent = Agent(
         base_url=os.getenv("OPENROUTER_BASE_URL"),
-        api_key=os.getenv("OPENROUTER_API_KEY")
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+        max_iterations=5  # Custom limit
     )
 
+    # Example of requesting a JSON response
     messages = [
         {
             "role": "system",
-            "content": "You are a helpful assistant that can check weather information. But once you have it - turn it into a haiku."
+            "content": "You are a helpful assistant that can check weather information."
         },
         {
             "role": "user",
-            "content": "What is the weather like in Boston?"
+            "content": "What is the weather like in Boston? Return the information in JSON format."
         }
     ]
-    logger.debug("Initial messages: {}", messages)
+
+    # Define the expected JSON response schema
+    json_schema = {
+        "type": "object",
+        "properties": {
+            "location": {"type": "string"},
+            "temperature": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": "number"},
+                    "unit": {"type": "string"}
+                },
+                "required": ["value", "unit"]
+            },
+            "conditions": {"type": "string"}
+        },
+        "required": ["location", "temperature", "conditions"]
+    }
 
     tools = [
         {
@@ -62,9 +84,14 @@ def run_conversation():
         "get_current_weather": get_current_weather
     }
 
-    # Run the conversation
-    response = agent.run(messages, tools, tool_functions)
-    print("Assistant:", response)
+    try:
+        # Run the conversation with JSON validation
+        response = agent.run(messages, tools, tool_functions, json_response=json_schema)
+        print("Assistant:", json.dumps(response, indent=2))
+    except ValueError as e:
+        print(f"Error: {e}")
+    except ValidationError as e:
+        print(f"JSON validation error: {e}")
 
 if __name__ == "__main__":
     logger.info("Starting weather conversation application")
