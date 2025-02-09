@@ -1,7 +1,7 @@
 from ..base_tool import BaseTool
 from ..models import TemperatureUnit, Coordinates
 from typing import Optional
-import random
+import httpx
 from pydantic import BaseModel, Field
 
 class WeatherRequest(BaseModel):
@@ -44,23 +44,90 @@ class GetWeatherTool(BaseTool):
             unit=unit
         )
         
-        # Parse coordinates if provided
-        coords = None
-        if request.coordinates:
-            try:
-                coords = Coordinates.from_string(request.coordinates)
-            except ValueError as e:
-                return str(e)
-        
-        # Mock implementation
-        temp = random.randint(-5, 30)
-        conditions = random.choice(["sunny", "partly cloudy", "overcast", "rainy"])
-        
-        if coords:
-            location_str = f"at coordinates {coords}"
-        else:
-            location_str = f"in {location}"
-            
-        temp_str = f"{temp}°{'C' if unit == TemperatureUnit.CELSIUS else 'F'}"
-        
-        return f"The weather {location_str} is {temp_str} and {conditions}" 
+        try:
+            async with httpx.AsyncClient() as client:
+                # If coordinates aren't provided, get them from the location name
+                if not request.coordinates:
+                    # Use OpenStreetMap Nominatim API to get coordinates
+                    geocode_url = f"https://nominatim.openstreetmap.org/search"
+                    params = {
+                        "q": request.location,
+                        "format": "json",
+                        "limit": 1
+                    }
+                    headers = {
+                        "User-Agent": "MinimalAgentFramework/1.0"  # Required by Nominatim
+                    }
+                    
+                    response = await client.get(geocode_url, params=params, headers=headers)
+                    response.raise_for_status()
+                    
+                    locations = response.json()
+                    if not locations:
+                        return f"Could not find coordinates for location: {request.location}"
+                    
+                    lat = float(locations[0]["lat"])
+                    lon = float(locations[0]["lon"])
+                    coords = Coordinates(latitude=lat, longitude=lon)
+                else:
+                    try:
+                        coords = Coordinates.from_string(request.coordinates)
+                    except ValueError as e:
+                        return str(e)
+                
+                # Get weather from OpenMeteo API
+                weather_url = "https://api.open-meteo.com/v1/forecast"
+                params = {
+                    "latitude": coords.latitude,
+                    "longitude": coords.longitude,
+                    "current": ["temperature_2m", "weather_code"],
+                    "temperature_unit": "celsius" if unit == TemperatureUnit.CELSIUS else "fahrenheit"
+                }
+                
+                response = await client.get(weather_url, params=params)
+                response.raise_for_status()
+                
+                weather_data = response.json()
+                
+                # Map WMO weather codes to descriptions
+                # https://open-meteo.com/en/docs
+                weather_codes = {
+                    0: "clear sky",
+                    1: "mainly clear",
+                    2: "partly cloudy",
+                    3: "overcast",
+                    45: "foggy",
+                    48: "depositing rime fog",
+                    51: "light drizzle",
+                    53: "moderate drizzle",
+                    55: "dense drizzle",
+                    61: "slight rain",
+                    63: "moderate rain",
+                    65: "heavy rain",
+                    71: "slight snow",
+                    73: "moderate snow",
+                    75: "heavy snow",
+                    77: "snow grains",
+                    80: "slight rain showers",
+                    81: "moderate rain showers",
+                    82: "violent rain showers",
+                    85: "slight snow showers",
+                    86: "heavy snow showers",
+                    95: "thunderstorm",
+                    96: "thunderstorm with slight hail",
+                    99: "thunderstorm with heavy hail",
+                }
+                
+                temp = weather_data["current"]["temperature_2m"]
+                weather_code = weather_data["current"]["weather_code"]
+                conditions = weather_codes.get(weather_code, "unknown conditions")
+                
+                location_str = f"at coordinates {coords}" if request.coordinates else f"in {request.location}"
+                temp_str = f"{temp}°{'C' if unit == TemperatureUnit.CELSIUS else 'F'}"
+                
+                return f"The weather {location_str} is {temp_str} with {conditions}"
+                
+        except httpx.RequestError as e:
+            return f"Error fetching weather data: {str(e)}"
+        except Exception as e:
+            return f"Unexpected error: {str(e)}" 
