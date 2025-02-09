@@ -5,6 +5,8 @@ from loguru import logger
 from agent import Agent
 import json
 from jsonschema.exceptions import ValidationError
+from memory import FileMemory
+from typing import Any
 
 load_dotenv()
 
@@ -32,6 +34,9 @@ def get_current_weather(location: str, coordinates: str = None, unit: str = "cel
 def run_conversation():
     logger.info("Starting conversation")
     
+    # Initialize memory
+    memory = FileMemory()
+    
     agent = Agent(
         base_url=os.getenv("OPENROUTER_BASE_URL"),
         api_key=os.getenv("OPENROUTER_API_KEY"),
@@ -41,29 +46,35 @@ def run_conversation():
     messages = [
         {
             "role": "system",
-            "content": """You are a helpful assistant that can check weather information. You MUST follow these exact steps:
-
-1. FIRST, you must call get_city_coordinates to get the exact coordinates
-2. THEN, you must call get_current_weather with those coordinates
-3. ONLY AFTER getting real data from both tools, return a JSON object with this structure:
-{
-    "location": "city name",
-    "coordinates": {
-        "latitude": number,
-        "longitude": number
-    },
-    "temperature": {
-        "value": number,
-        "unit": string
-    },
-    "conditions": string
-}
-
-DO NOT make up or guess any values - you must get real data using the tools."""
+            "content": """You are a helpful assistant that can check weather information and remember user preferences. 
+            
+            Follow these steps in order:
+            1. Get the city coordinates
+            2. Get the current weather
+            3. ALWAYS use the remember tool to save the last requested city with key="last_city"
+            4. Return the weather information as JSON
+            
+            Your final response must be a valid JSON object with these exact fields:
+            {
+                "location": "city name",
+                "coordinates": {
+                    "latitude": number,
+                    "longitude": number
+                },
+                "temperature": {
+                    "value": number,
+                    "unit": string
+                },
+                "conditions": string
+            }
+            
+            Do not include the schema definition in your response, just the actual values.
+            
+            Important: You must use the remember tool to save the city name before providing the final response."""
         },
         {
             "role": "user",
-            "content": "What's the current weather in New York? Please include the coordinates in your response."
+            "content": "What's the current weather in in the last city I asked for (use memory for last_city)? Please include the coordinates in your response."
         }
     ]
 
@@ -93,6 +104,15 @@ DO NOT make up or guess any values - you must get real data using the tools."""
         "required": ["location", "coordinates", "temperature", "conditions"]
     }
 
+    def remember(key: str, value: Any) -> str:
+        """Tool function to save information to memory"""
+        return memory.save(key, value)
+
+    def recall(key: str) -> str:
+        """Tool function to recall information from memory"""
+        value = memory.get(key)
+        return f"Remembered value for {key}: {value}" if value is not None else f"No memory found for {key}"
+
     tools = [
         {
             "type": "function",
@@ -119,14 +139,8 @@ DO NOT make up or guess any values - you must get real data using the tools."""
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "The city name, e.g. Boston"
-                        },
-                        "coordinates": {
-                            "type": "string",
-                            "description": "The latitude and longitude coordinates"
-                        },
+                        "location": {"type": "string"},
+                        "coordinates": {"type": "string"},
                         "unit": {
                             "type": "string",
                             "enum": ["celsius", "fahrenheit"]
@@ -135,18 +149,62 @@ DO NOT make up or guess any values - you must get real data using the tools."""
                     "required": ["location"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "remember",
+                "description": "Save information to memory for future use",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "key": {
+                            "type": "string",
+                            "description": "The key to store the value under"
+                        },
+                        "value": {
+                            "type": "string",
+                            "description": "The value to remember"
+                        }
+                    },
+                    "required": ["key", "value"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "recall",
+                "description": "Recall information from memory",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "key": {
+                            "type": "string",
+                            "description": "The key to recall the value for"
+                        }
+                    },
+                    "required": ["key"]
+                }
+            }
         }
     ]
 
     # Map of tool names to their functions
     tool_functions = {
         "get_city_coordinates": get_city_coordinates,
-        "get_current_weather": get_current_weather
+        "get_current_weather": get_current_weather,
+        "remember": remember,
+        "recall": recall
     }
 
     try:
         response = agent.run(messages, tools, tool_functions, json_response=json_schema)
         print("Assistant:", json.dumps(response, indent=2))
+        
+        # Print the current memory contents
+        print("\nCurrent memory contents:")
+        print(json.dumps(memory.get_all(), indent=2))
     except ValueError as e:
         print(f"Error: {e}")
     except ValidationError as e:

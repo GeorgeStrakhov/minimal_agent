@@ -76,3 +76,6 @@ tmp/
 
 # Environment variables
 .env
+
+# Project specific
+memory.json 

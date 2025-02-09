@@ -27,15 +27,19 @@ class Agent:
         """
         Clean up the response content by removing markdown formatting and other non-JSON elements.
         """
-        # Remove markdown code block formatting if present
-        if content.startswith('```') and content.endswith('```'):
-            # Remove first line if it contains ```json or similar
-            lines = content.split('\n')
-            if lines[0].startswith('```'):
-                lines = lines[1:]
-            if lines[-1].startswith('```'):
-                lines = lines[:-1]
-            content = '\n'.join(lines)
+        # Find JSON content between triple backticks if present
+        if '```' in content:
+            import re
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(1)
+        
+        # Remove any non-JSON text before or after the JSON object
+        content = content.strip()
+        first_brace = content.find('{')
+        last_brace = content.rfind('}')
+        if first_brace != -1 and last_brace != -1:
+            content = content[first_brace:last_brace + 1]
         
         # Remove any leading/trailing whitespace
         content = content.strip()
@@ -52,18 +56,8 @@ class Agent:
         """
         Run the conversation with the given messages and tools until a final response is reached.
         
-        Args:
-            messages: List of message dictionaries in OpenAI format
-            tools: List of tool definitions in OpenAI format
-            tool_functions: Dictionary mapping tool names to their actual functions
-            json_response: Optional JSON schema for validating the response
-            
-        Returns:
-            Either a string response or a JSON object if json_response schema is provided
-            
-        Raises:
-            ValueError: If max iterations reached or unknown tool called
-            ValidationError: If JSON response doesn't match the provided schema
+        The agent can now provide a final response while also making tool calls.
+        Tool calls will be processed before returning the final response.
         """
         logger.debug("Starting conversation with {} messages", len(messages))
         logger.debug("Available tools: {}", list(tool_functions.keys()))
@@ -92,66 +86,68 @@ class Agent:
             )
             
             response_message = completion.choices[0].message
-            logger.debug("Model response: {}", response_message)  # Add this for debugging
+            logger.debug("Model response: {}", response_message)
 
-            # If there's no tool calls, we can process the final response
-            if not response_message.tool_calls:
-                logger.warning("Model generated response without using tools: {}", response_message.content)
-                if iterations == 1:
-                    logger.error("Model attempted to respond without using required tools!")
-                    raise ValueError("Model must use tools before generating final response")
-                
-                logger.info("Processing final response after {} iterations", iterations)
+            # First, check if we have a valid response content
+            final_response = None
+            if response_message.content and response_message.content.strip():
+                logger.info("Processing response content")
                 
                 if json_response:
                     try:
-                        # Clean up the response before parsing
                         cleaned_content = self._clean_json_response(response_message.content)
                         logger.debug("Cleaned content for JSON parsing: {}", cleaned_content)
                         
-                        # Try to parse the response as JSON
                         response_content = json.loads(cleaned_content)
-                        # Validate against the schema
                         validate_json(instance=response_content, schema=json_response)
-                        return response_content
-                    except json.JSONDecodeError as e:
-                        logger.error("Failed to parse response as JSON: {}", e)
-                        raise ValueError(f"Response is not valid JSON: {e}")
-                    except ValidationError as e:
-                        logger.error("JSON validation failed: {}", e)
-                        raise
-                
-                return response_message.content
+                        final_response = response_content
+                    except (json.JSONDecodeError, ValidationError) as e:
+                        logger.error("Response validation failed: {}", e)
+                        if not response_message.tool_calls:
+                            raise
+                else:
+                    final_response = response_message.content
 
-            # Handle tool calls
-            logger.info("Processing tool calls")
-            for tool_call in response_message.tool_calls:
-                function_name = tool_call.function.name
-                
-                if function_name not in tool_functions:
-                    logger.warning("Unknown tool call received: {}", function_name)
-                    raise ValueError(f"Unknown tool: {function_name}")
+            # Then, handle any tool calls
+            if response_message.tool_calls:
+                logger.info("Processing tool calls")
+                for tool_call in response_message.tool_calls:
+                    function_name = tool_call.function.name
+                    
+                    if function_name not in tool_functions:
+                        logger.warning("Unknown tool call received: {}", function_name)
+                        raise ValueError(f"Unknown tool: {function_name}")
 
-                logger.debug("Handling function call: {}", tool_call)
-                function_args = json.loads(tool_call.function.arguments)
-                logger.debug("Function arguments: {}", function_args)
-                
-                function = tool_functions[function_name]
-                function_response = function(**function_args)
-                logger.debug("Function response: {}", function_response)
+                    logger.debug("Handling function call: {}", tool_call)
+                    function_args = json.loads(tool_call.function.arguments)
+                    logger.debug("Function arguments: {}", function_args)
+                    
+                    function = tool_functions[function_name]
+                    function_response = function(**function_args)
+                    logger.debug("Function response: {}", function_response)
 
-                messages.extend([
-                    {
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [tool_call]
-                    },
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": function_response
-                    }
-                ])
-                logger.debug("Updated messages: {}", messages)
+                    messages.extend([
+                        {
+                            "role": "assistant",
+                            "content": response_message.content,
+                            "tool_calls": [tool_call]
+                        },
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": function_response
+                        }
+                    ])
+                    logger.debug("Updated messages: {}", messages)
+                
+                # Continue the conversation if we have tool calls
+                continue
+
+            # If we reach here, we have no more tool calls
+            if final_response is None:
+                logger.error("No valid response or tool calls received")
+                raise ValueError("Model must provide either a valid response or tool calls")
+                
+            return final_response
 
         raise ValueError(f"Max iterations ({self.max_iterations}) reached without final response") 
