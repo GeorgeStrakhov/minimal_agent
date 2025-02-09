@@ -69,34 +69,39 @@ class Agent:
         logger.debug("Available tools: {}", list(tool_functions.keys()))
 
         if json_response:
-            # Add JSON response requirement to system message
-            system_msg = {
-                "role": "system",
-                "content": (
-                    "You must respond with a valid JSON object in the following format:\n"
-                    f"{json.dumps(json_response, indent=2)}\n"
-                    "Ensure your response is ONLY the JSON object, nothing else."
-                )
-            }
-            messages = [system_msg] + messages
+            # Instead of adding a new system message, modify the existing one
+            if messages and messages[0]["role"] == "system":
+                current_content = messages[0]["content"]
+                messages[0]["content"] = current_content + "\n\nYour final response must be a valid JSON object with this exact structure:\n" + json.dumps(json_response, indent=2)
+            else:
+                # If no system message exists, add one
+                messages = [{
+                    "role": "system",
+                    "content": "You must respond with a valid JSON object in this format:\n" + json.dumps(json_response, indent=2)
+                }] + messages
 
         iterations = 0
         while iterations < self.max_iterations:
             iterations += 1
-            logger.info(f"Iteration {iterations}/{self.max_iterations}")
+            logger.info(f"Starting iteration {iterations}/{self.max_iterations}")
             
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 tools=tools
             )
-            logger.debug("Received response: {}", completion)
-
+            
             response_message = completion.choices[0].message
+            logger.debug("Model response: {}", response_message)  # Add this for debugging
 
             # If there's no tool calls, we can process the final response
             if not response_message.tool_calls:
-                logger.info("No tool calls, processing final response")
+                logger.warning("Model generated response without using tools: {}", response_message.content)
+                if iterations == 1:
+                    logger.error("Model attempted to respond without using required tools!")
+                    raise ValueError("Model must use tools before generating final response")
+                
+                logger.info("Processing final response after {} iterations", iterations)
                 
                 if json_response:
                     try:
