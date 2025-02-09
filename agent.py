@@ -5,6 +5,8 @@ import json
 from loguru import logger
 from jsonschema import validate as validate_json
 from jsonschema.exceptions import ValidationError
+import asyncio
+from typing import Awaitable
 
 class Agent:
     def __init__(
@@ -41,12 +43,9 @@ class Agent:
         if first_brace != -1 and last_brace != -1:
             content = content[first_brace:last_brace + 1]
         
-        # Remove any leading/trailing whitespace
-        content = content.strip()
-        
-        return content
+        return content.strip()
 
-    def run(
+    async def run(
         self,
         messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
@@ -111,6 +110,8 @@ class Agent:
             # Then, handle any tool calls
             if response_message.tool_calls:
                 logger.info("Processing tool calls")
+                tool_results = []
+                
                 for tool_call in response_message.tool_calls:
                     function_name = tool_call.function.name
                     
@@ -123,22 +124,28 @@ class Agent:
                     logger.debug("Function arguments: {}", function_args)
                     
                     function = tool_functions[function_name]
-                    function_response = function(**function_args)
+                    function_response = await function(**function_args)
                     logger.debug("Function response: {}", function_response)
+                    
+                    tool_results.append({
+                        "tool_call_id": tool_call.id,
+                        "function_response": function_response
+                    })
 
-                    messages.extend([
-                        {
-                            "role": "assistant",
-                            "content": response_message.content,
-                            "tool_calls": [tool_call]
-                        },
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": function_response
-                        }
-                    ])
-                    logger.debug("Updated messages: {}", messages)
+                # Add all tool responses at once
+                messages.extend([
+                    {
+                        "role": "assistant",
+                        "content": response_message.content,
+                        "tool_calls": response_message.tool_calls
+                    },
+                    *[{
+                        "role": "tool",
+                        "tool_call_id": result["tool_call_id"],
+                        "content": result["function_response"]
+                    } for result in tool_results]
+                ])
+                logger.debug("Updated messages: {}", messages)
                 
                 # Continue the conversation if we have tool calls
                 continue
