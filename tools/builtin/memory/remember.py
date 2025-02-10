@@ -1,4 +1,5 @@
 from tools import BaseTool
+from tools.env import ToolEnv, EnvVar
 from pydantic import BaseModel, Field
 import json
 import os
@@ -10,6 +11,16 @@ class MemoryItem(BaseModel):
 class RememberTool(BaseTool):
     name = "remember"
     description = "Save information to memory for future use"
+    
+    # Define environment configuration
+    env = ToolEnv([
+        EnvVar("MEMORY_FILE", "Path to the memory storage file", required=False)
+    ])
+    
+    def __init__(self, memory_file: str = None):
+        super().__init__()
+        # Use provided file path, env var, or default
+        self.memory_file = memory_file or os.getenv("MEMORY_FILE") or "memory.json"
     
     async def execute(
         self,
@@ -30,11 +41,9 @@ class RememberTool(BaseTool):
         item = MemoryItem(key=key, value=value)
         
         try:
-            memory_file = "memory.json"
-            
             # Load existing memory
-            if os.path.exists(memory_file):
-                with open(memory_file, 'r') as f:
+            if os.path.exists(self.memory_file):
+                with open(self.memory_file, 'r') as f:
                     memory = json.load(f)
             else:
                 memory = {}
@@ -43,7 +52,7 @@ class RememberTool(BaseTool):
             memory[item.key] = item.value
             
             # Save memory
-            with open(memory_file, 'w') as f:
+            with open(self.memory_file, 'w') as f:
                 json.dump(memory, f, indent=2)
             
             return f"Successfully saved: {item.key} = {item.value}"

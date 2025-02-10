@@ -33,7 +33,7 @@ class ToolRegistry:
                 continue
             
             try:
-                # Load the module
+                # Force reload the module to pick up new environment variables
                 module_name = str(file.relative_to(tools_path).with_suffix("")).replace("/", ".")
                 logger.debug(f"Attempting to load module: {module_name} from {file}")
                 
@@ -57,6 +57,7 @@ class ToolRegistry:
                             continue
                             
                         logger.info(f"Found tool class: {name} with tool name: {obj.name}")
+                        # Create a fresh instance of the tool to pick up current environment variables
                         self.register_tool(obj)
                         
             except Exception as e:

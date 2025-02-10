@@ -1,9 +1,14 @@
+from loguru import logger
+import json
+import os
+
+from dotenv import load_dotenv
+load_dotenv() # NB! Important to load the .env file before importing the tools as they will use the environment variables
+
 from tools.registry import ToolRegistry
 from tools import BaseTool
 from pup import Pup
 import asyncio
-from loguru import logger
-import json
 from errors import PupError
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -51,13 +56,13 @@ async def main():
     
     # Create weather pup
     weather_pup = Pup(
-        system_prompt="""You are a weather assistant. Use the weather tool to check the weather and retport it back to the user as a little poem. You MUST use the tool first.. Then use the memory tool to remember the city and the weather for later use.""",
+        system_prompt="""You are a weather assistant. Use the weather tool to check the weather and retport it back to the user as a little poem. You MUST use the tool first.. Then use the memory tool (remember) to remember the city and the weather for later use.""",
         tools=weather_tools
     )
 
     try:
         response = await weather_pup.run(
-            "What's the weather like in Amsterdam?"
+            "What's the weather like in Paris?"
         )
         print("\nWeather:", response)
         

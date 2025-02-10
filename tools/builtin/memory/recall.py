@@ -1,4 +1,5 @@
 from tools import BaseTool
+from tools.env import ToolEnv, EnvVar
 from pydantic import BaseModel, Field
 import json
 import os
@@ -9,6 +10,16 @@ class RecallRequest(BaseModel):
 class RecallTool(BaseTool):
     name = "recall"
     description = "Recall information from key-value memory by key"
+    
+    # Share the same environment configuration
+    env = ToolEnv([
+        EnvVar("MEMORY_FILE", "Path to the memory storage file", required=False)
+    ])
+    
+    def __init__(self, memory_file: str = None):
+        super().__init__()
+        # Use provided file path, env var, or default
+        self.memory_file = memory_file or os.getenv("MEMORY_FILE") or "memory.json"
     
     async def execute(
         self,
@@ -27,12 +38,10 @@ class RecallTool(BaseTool):
         request = RecallRequest(key=key)
         
         try:
-            memory_file = "memory.json"
-            
-            if not os.path.exists(memory_file):
+            if not os.path.exists(self.memory_file):
                 return f"No memory found for key: {request.key}"
             
-            with open(memory_file, 'r') as f:
+            with open(self.memory_file, 'r') as f:
                 memory = json.load(f)
             
             value = memory.get(request.key)

@@ -20,7 +20,8 @@ class Pup:
         json_response: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
-        model: str = "google/gemini-2.0-flash-001",
+        #model: str = "google/gemini-2.0-flash-001",
+        model: str = "openai/gpt-4o-mini",
         max_iterations: int = 10,
         tools: Optional[Dict[str, Dict[str, Any]]] = None
     ):
