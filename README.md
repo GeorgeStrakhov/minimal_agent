@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/smartpup.png" alt="SmartPup Logo" width="300"/>
+  <img src="https://raw.githubusercontent.com/georgestrakhov/smartpup/main/docs/assets/smartpup.png" alt="SmartPup Logo" width="300"/>
 </p>
 
 # SmartPup
