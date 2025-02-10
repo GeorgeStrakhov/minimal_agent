@@ -3,6 +3,7 @@ from pup import Pup
 import asyncio
 from loguru import logger
 import json
+from errors import PupError
 
 async def main():
     # Initialize tool registry
@@ -46,7 +47,7 @@ async def main():
 
     # Weather pup with tools configured at init
     weather_pup = Pup(
-        system_prompt="""You are a weather assistant, you always respond with the current weather in the specified city using available tools. Don't forget to update the memory about the last city that the user has asked for.""",
+        system_prompt="""You are a weather assistant that provides current weather information for cities to users. And you use memory tool to save the last city that the user has asked for.""",
         json_response=json_schema,
         tools=tools,
         tool_functions=tool_functions
@@ -55,17 +56,29 @@ async def main():
     try:
         # Run conversations
         response = await zen_pup.run(
-            "What's the current weather in Dubai?"
+            "What's the current weather, baby pup?"
         )
         print("\nAssistant:", json.dumps(response, indent=2))
 
         response = await weather_pup.run(
-            "What's the current weather in Chicago?"
+            "What's the current weather in Paris?"
         )
         print("\nAssistant:", json.dumps(response, indent=2))
         
+    except PupError as e:
+        if e.type == PupError.COGNITIVE:
+            logger.warning("Pup was confused: {} ({})", e.message, e.subtype)
+        elif e.subtype == PupError.INVALID_JSON:
+            logger.error("Pup didn't return valid JSON: {}", e.message)
+        elif e.subtype == PupError.SCHEMA_VIOLATION:
+            logger.error("Pup's JSON didn't match schema: {}", e.message)
+        else:
+            logger.error("Technical error: {} ({})", e.message, e.subtype)
+            
+        if e.details:
+            logger.debug("Error details: {}", e.details)
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error("Unexpected error: {}", str(e))
 
 if __name__ == "__main__":
     logger.info("Starting weather conversation application")

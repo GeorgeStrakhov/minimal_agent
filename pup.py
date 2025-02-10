@@ -8,6 +8,7 @@ from jsonschema.exceptions import ValidationError
 import asyncio
 from typing import Awaitable
 from dotenv import load_dotenv
+from errors import PupError
 
 load_dotenv()
 
@@ -47,10 +48,33 @@ class Pup:
             api_key=self.api_key,
         )
         
-        # Store the system prompt and JSON schema
-        self.system_prompt = system_prompt
+        # Build comprehensive bail instructions
+        bail_instruction = """
+        Important Instructions:
+        1. You are a specialized assistant with a specific task. Stay focused on that task.
+        2. Do not engage in conversation or ask follow-up questions.
+        3. If you cannot complete the task with the information provided, respond with BAIL.
+        
+        When to BAIL:
+        - If required information is missing
+        - If the request is unclear or ambiguous
+        - If you're unsure about anything
+        - If the task is outside your specific role
+        
+        How to BAIL:
+        Respond with: BAIL: <clear explanation of why you cannot proceed>
+        
+        Remember: It's better to bail clearly than to guess or ask for clarification.
+        """
+        
+        self.system_prompt = system_prompt + "\n\n" + bail_instruction
+        
         if json_response:
-            self.system_prompt += "\n\nYour final response must be a valid JSON object with this exact structure:\n" + json.dumps(json_response, indent=2)
+            self.system_prompt += (
+                "\n\nYou MUST respond with valid JSON in this exact structure:\n" 
+                + json.dumps(json_response, indent=2) 
+                + "\nNever respond with plain text when JSON is required."
+            )
         self.json_response = json_response
         
         self.model = model
@@ -126,106 +150,142 @@ class Pup:
         Returns:
             The final response, either as a string or JSON object
         """
-        # Use instance tools if not overridden by run arguments
-        tools = tools or self.tools
-        tool_functions = tool_functions or self.tool_functions
-        
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": user_message}
-        ]
-        
-        logger.debug("Starting conversation with user message: {}", user_message)
-        if tools:
-            logger.debug("Available tools: {}", list(tool_functions.keys()))
-
-        iterations = 0
-        while iterations < self.max_iterations:
-            iterations += 1
-            logger.info(f"Starting iteration {iterations}/{self.max_iterations}")
+        try:
+            # Use instance tools if not overridden by run arguments
+            tools = tools or self.tools
+            tool_functions = tool_functions or self.tool_functions
             
-            # Only include tools if they're provided
-            completion_args = {
-                "model": self.model,
-                "messages": messages,
-            }
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": user_message}
+            ]
+            
+            logger.debug("Starting conversation with user message: {}", user_message)
             if tools:
-                completion_args["tools"] = tools
-            
-            completion = self.client.chat.completions.create(**completion_args)
-            
-            response_message = completion.choices[0].message
-            logger.debug("Model response: {}", response_message)
+                logger.debug("Available tools: {}", list(tool_functions.keys()))
 
-            # First, check if we have a valid response content
-            if response_message.content and response_message.content.strip():
-                logger.info("Processing response content")
-                content = response_message.content.strip()
+            iterations = 0
+            while iterations < self.max_iterations:
+                iterations += 1
+                logger.info(f"Starting iteration {iterations}/{self.max_iterations}")
                 
-                if self.json_response:
-                    try:
-                        cleaned_data = self._clean_json_response(content)
-                        validate_json(instance=cleaned_data, schema=self.json_response)
-                        return cleaned_data
-                    except (json.JSONDecodeError, ValidationError) as e:
-                        logger.error("Response validation failed: {}", e)
-                        if not response_message.tool_calls:
-                            return content
-                    except Exception as e:
-                        logger.error("Content cleaning failed: {}", e)
-                        if not response_message.tool_calls:
-                            return content
-                else:
-                    return content
+                # Only include tools if they're provided
+                completion_args = {
+                    "model": self.model,
+                    "messages": messages,
+                }
+                if tools:
+                    completion_args["tools"] = tools
+                
+                completion = self.client.chat.completions.create(**completion_args)
+                
+                response_message = completion.choices[0].message
+                logger.debug("Model response: {}", response_message)
 
-            # Only handle tool calls if tools were provided
-            if tools and response_message.tool_calls:
-                logger.info("Processing tool calls")
-                tool_results = []
-                
-                for tool_call in response_message.tool_calls:
-                    function_name = tool_call.function.name
+                # First, check if we have a valid response content
+                if response_message.content and response_message.content.strip():
+                    logger.info("Processing response content")
+                    content = response_message.content.strip()
                     
-                    if function_name not in tool_functions:
-                        logger.warning("Unknown tool call received: {}", function_name)
-                        raise ValueError(f"Unknown tool: {function_name}")
+                    # Check for bail message first
+                    if content.startswith("BAIL:"):
+                        raise PupError(
+                            type=PupError.COGNITIVE,
+                            subtype=PupError.UNCERTAIN,
+                            message=content[5:].strip(),
+                            details={"user_message": user_message}
+                        )
 
-                    logger.debug("Handling function call: {}", tool_call)
-                    function_args = json.loads(tool_call.function.arguments)
-                    logger.debug("Function arguments: {}", function_args)
+                    if self.json_response:
+                        try:
+                            cleaned_data = self._clean_json_response(content)
+                            validate_json(instance=cleaned_data, schema=self.json_response)
+                            return cleaned_data
+                        except (json.JSONDecodeError, ValidationError) as e:
+                            logger.error("Response validation failed: {}", e)
+                            if not response_message.tool_calls:
+                                return content
+                        except Exception as e:
+                            logger.error("Content cleaning failed: {}", e)
+                            if not response_message.tool_calls:
+                                return content
+                    else:
+                        return content
+
+                # Only handle tool calls if tools were provided
+                if tools and response_message.tool_calls:
+                    logger.info("Processing tool calls")
+                    tool_results = []
                     
-                    function = tool_functions[function_name]
-                    function_response = await function(**function_args)
-                    logger.debug("Function response: {}", function_response)
+                    for tool_call in response_message.tool_calls:
+                        function_name = tool_call.function.name
+                        
+                        if function_name not in tool_functions:
+                            logger.warning("Unknown tool call received: {}", function_name)
+                            raise ValueError(f"Unknown tool: {function_name}")
+
+                        logger.debug("Handling function call: {}", tool_call)
+                        function_args = json.loads(tool_call.function.arguments)
+                        logger.debug("Function arguments: {}", function_args)
+                        
+                        function = tool_functions[function_name]
+                        function_response = await function(**function_args)
+                        logger.debug("Function response: {}", function_response)
+                        
+                        tool_results.append({
+                            "tool_call_id": tool_call.id,
+                            "function_response": function_response
+                        })
+
+                    # Add all tool responses at once
+                    messages.extend([
+                        {
+                            "role": "assistant",
+                            "content": response_message.content,
+                            "tool_calls": response_message.tool_calls
+                        },
+                        *[{
+                            "role": "tool",
+                            "tool_call_id": result["tool_call_id"],
+                            "content": result["function_response"]
+                        } for result in tool_results]
+                    ])
+                    # logger.debug("Updated messages: {}", messages)
                     
-                    tool_results.append({
-                        "tool_call_id": tool_call.id,
-                        "function_response": function_response
-                    })
+                    # Continue the conversation if we have tool calls
+                    continue
 
-                # Add all tool responses at once
-                messages.extend([
-                    {
-                        "role": "assistant",
-                        "content": response_message.content,
-                        "tool_calls": response_message.tool_calls
-                    },
-                    *[{
-                        "role": "tool",
-                        "tool_call_id": result["tool_call_id"],
-                        "content": result["function_response"]
-                    } for result in tool_results]
-                ])
-                # logger.debug("Updated messages: {}", messages)
-                
-                # Continue the conversation if we have tool calls
-                continue
+                # If we reach here, we have no more tool calls
+                if response_message.content and response_message.content.strip():
+                    logger.error("No valid response or tool calls received")
+                    raise ValueError("Model must provide either a valid response or tool calls")
+                    
+                return response_message.content
 
-            # If we reach here, we have no more tool calls
-            if response_message.content and response_message.content.strip():
-                logger.error("No valid response or tool calls received")
-                raise ValueError("Model must provide either a valid response or tool calls")
-                
-            return response_message.content
+            raise ValueError(f"Max iterations ({self.max_iterations}) reached without final response")
 
-        raise ValueError(f"Max iterations ({self.max_iterations}) reached without final response") 
+        except json.JSONDecodeError as e:
+            raise PupError(
+                type=PupError.TECHNICAL,
+                subtype=PupError.INVALID_JSON,
+                message="Failed to parse JSON response",
+                details={"error": str(e)}
+            ) from e
+        except ValidationError as e:
+            raise PupError(
+                type=PupError.TECHNICAL,
+                subtype=PupError.SCHEMA_VIOLATION,
+                message="Response validation failed",
+                details={"error": str(e)}
+            ) from e
+        except ValueError as e:
+            raise PupError(
+                type=PupError.TECHNICAL,
+                message=str(e)
+            ) from e
+        except Exception as e:
+            raise PupError(
+                type=PupError.TECHNICAL,
+                message="Unexpected error",
+                details={"error": str(e)}
+            ) from e 
