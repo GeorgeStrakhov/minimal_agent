@@ -26,50 +26,26 @@ async def main():
     # Load all tools
     registry.discover_tools()
     
-    # Or load specific tools by name
-    # registry.discover_tools(tool_names=["get_weather", "get_datetime", "remember", "recall"])
+    # Get translation tools
+    translate_tools = registry.get_tools(["translate"])
     
-    # Get tools and functions in one call
-    tools = registry.get_tools()
-    
-    # Basic pup without tools
-    zen_pup = Pup(
-        system_prompt="""You are a zen master. you only respond in zen koans to everything"""
-    )
-
-    # Weather pup with specific tools
-    weather_tools = registry.get_tools(["get_weather", "remember", "recall"])
-    weather_pup = Pup(
-        system_prompt="""You are a weather assistant that provides current weather information for cities to users. And you use memory tool to save the last city that the user has asked for in last_city""",
-        json_response=WeatherResponse,
-        model="anthropic/claude-3.5-sonnet",
-        tools=weather_tools
-    )
-
-    # Time pup with datetime tool only
-    time_tools = registry.get_tools(["get_datetime"])
-    time_pup = Pup(
-        system_prompt="""You are a time assistant that helps users with date and time information. 
-        You should use the get_datetime tool to provide accurate current time information.""",
-        tools=time_tools
+    # Create translator pup
+    translator_pup = Pup(
+        system_prompt="""You are a translation assistant. Use the translate tool to translate text accurately.""",
+        tools=translate_tools
     )
 
     try:
-        # Run conversations
-        response = await zen_pup.run(
-            "What's the current weather, baby pup?"
+        # Test translations
+        response = await translator_pup.run(
+            "Translate 'Hello, how are you?' to Spanish"
         )
-        print("\nAssistant:", json.dumps(response, indent=2))
-
-        response = await weather_pup.run(
-            "What's the current weather in Mumbai?"
-        )
-        print("\nAssistant:", json.dumps(response, indent=2))
+        print("\nTranslation:", response)
         
-        response = await time_pup.run(
-            "What time is it in Amsterdam?"
+        response = await translator_pup.run(
+            "Now translate 'I love programming' to French"
         )
-        print("\nAssistant:", json.dumps(response, indent=2))
+        print("\nTranslation:", response)
         
     except PupError as e:
         if e.type == PupError.COGNITIVE:
@@ -87,5 +63,5 @@ async def main():
         logger.error("Unexpected error: {}", str(e))
 
 if __name__ == "__main__":
-    logger.info("Starting weather conversation application")
+    logger.info("Starting translation test")
     asyncio.run(main())

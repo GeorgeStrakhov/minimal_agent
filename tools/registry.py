@@ -34,7 +34,8 @@ class ToolRegistry:
             
             try:
                 # Load the module
-                module_name = f"tools.{'.'.join(file.relative_to(tools_path).with_suffix('').parts)}"
+                module_name = str(file.relative_to(tools_path).with_suffix("")).replace("/", ".")
+                logger.debug(f"Attempting to load module: {module_name} from {file}")
                 
                 spec = importlib.util.spec_from_file_location(module_name, str(file))
                 if spec is None or spec.loader is None:

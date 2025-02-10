@@ -1,17 +1,27 @@
-from typing import Any, Dict, Optional, get_type_hints, Type, Union, _GenericAlias
+from typing import Any, Dict, Optional, get_type_hints, Type, Union, _GenericAlias, ClassVar
 from pydantic import BaseModel, create_model
 import inspect
 import docstring_parser
 from loguru import logger
 from enum import Enum
+from .env import ToolEnv, EnvVar
 
 class BaseTool:
     name: str
     description: str
+    env: ClassVar[Optional[ToolEnv]] = None
     
     def __init__(self):
         if not hasattr(self, 'name') or not hasattr(self, 'description'):
             raise ValueError(f"Tool {self.__class__.__name__} must define 'name' and 'description'")
+            
+        # Validate environment variables if defined
+        if self.env:
+            missing = self.env.validate()
+            if missing:
+                raise ValueError(
+                    f"Tool {self.name} is missing required environment variables: {', '.join(missing)}"
+                )
     
     async def execute(self, **kwargs) -> Any:
         """Override this method to implement the tool's functionality"""
