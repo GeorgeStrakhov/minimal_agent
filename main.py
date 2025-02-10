@@ -42,6 +42,14 @@ async def main():
         tool_functions=tool_functions
     )
 
+    # Time pup with datetime tool
+    time_pup = Pup(
+        system_prompt="""You are a time assistant that helps users with date and time information. 
+        You should use the get_datetime tool to provide accurate current time information.""",
+        tools=tools,
+        tool_functions=tool_functions
+    )
+
     try:
         # Run conversations
         response = await zen_pup.run(
@@ -51,6 +59,11 @@ async def main():
 
         response = await weather_pup.run(
             "What's the current weather in Mumbai?"
+        )
+        print("\nAssistant:", json.dumps(response, indent=2))
+        
+        response = await time_pup.run(
+            "What time is it in Amsterdam?"
         )
         print("\nAssistant:", json.dumps(response, indent=2))
         
