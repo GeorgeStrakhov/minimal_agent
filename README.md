@@ -1,198 +1,137 @@
-# SmartPups Framework
+# SmartPup Framework
 
-A lightweight, extensible framework for building AI pups that can use tools and maintain memory across conversations. Features strong typing, input validation, and automatic schema generation.
+A an opinionated, minimalistic framework for building AI pups (a.k.a. agents) who are reliable and do what you tell them to do, without extra magic.
+
+* uses OpenRouter and only works with models that support function calling
+* uses Pydantic for input and output validation
+* treats the idea of "Agents" as simply smart functions: you tell them what to do and what kind of output you expect - and they run off and do it predictably, with the output you expect. Or they bail.
+* our pups (agents) are not trying to hold conversation history etc. beyond the scope of their current task.
 
 ## Overview
 
 This framework provides a simple way to create AI pups that can:
-- Use multiple tools/functions with input validation
-- Maintain memory across conversations
+- Use tools with input validation
+- Remember information across conversations (via a memory tool if needed)
 - Return structured JSON responses
 - Handle multi-step conversations
-- Process tool calls and responses in parallel with final responses
 
 ## Core Components
 
 ### Pup (`pup.py`)
 
-The main pup class that handles:
-- Async conversation management
-- Tool calling and response processing
-- JSON validation and cleaning
-- Response handling
+A pup can be created with or without tools:
 
 ```python
-pup = Pup(
-    base_url="your_api_base_url",
-    api_key="your_api_key",
-    model="model_name",
-    max_iterations=5
+# Basic pup without tools
+zen_pup = Pup(
+    system_prompt="You are a zen master, you always respond with a koan and nothing else."
 )
 
-# Run a conversation
-response = await pup.run(messages, tools, tool_functions)
+# Advanced pup with tools and JSON validation
+weather_pup = Pup(
+    system_prompt="You are a weather assistant...",
+    json_response=json_schema,  # Optional schema for validation
+    tools=tools,               # Optional tools for capabilities
+    tool_functions=tool_functions
+)
+
+# Run conversations
+response = await zen_pup.run("What is the sound of one hand clapping?")
+response = await weather_pup.run("What's the weather in Chicago?")
 ```
 
-### Tool System
+### Tools
 
-Tools are self-contained modules that:
-- Auto-generate their OpenAI function schemas
+Tools are self-contained modules that give pups additional capabilities. They:
+- Auto-generate their schemas from Python type hints
 - Validate inputs using Pydantic
 - Support async execution
-- Provide clear error messages
 
-Example tool implementation:
+Example tool:
 
 ```python
 from tools.base_tool import BaseTool
-from tools.models import TemperatureUnit
 from pydantic import BaseModel, Field
 
 class WeatherRequest(BaseModel):
-    location: str = Field(..., min_length=1, description="City name")
-    unit: TemperatureUnit = Field(
-        default=TemperatureUnit.CELSIUS,
-        description="Temperature unit to use"
-    )
+    location: str = Field(..., description="City name")
+    unit: str = Field(default="celsius", description="Temperature unit")
 
 class WeatherTool(BaseTool):
     name = "get_weather"
     description = "Get current weather for a location"
     
-    async def execute(
-        self,
-        location: str,
-        unit: TemperatureUnit = TemperatureUnit.CELSIUS
-    ) -> str:
-        """Get weather information for a location"""
-        # Validate inputs
+    async def execute(self, location: str, unit: str = "celsius") -> str:
         request = WeatherRequest(location=location, unit=unit)
         # Implementation...
         return f"Weather in {location} is sunny"
 ```
 
-### Memory System (`tools/memory/`)
+### Memory System
 
-A tool-based memory system that allows the pup to:
-- Save information for future use
-- Recall previously stored information
-- Validate memory operations
-- Persist data between conversations
+A simple key-value store that persists between conversations:
 
 ```python
-# Memory tools are automatically discovered and loaded
-remember_tool = registry.tools["remember"]()
-recall_tool = registry.tools["recall"]()
-
 # Save data
-await remember_tool.execute(key="user_preference", value="celsius")
+await remember_tool.execute(key="last_city", value="Chicago")
 
 # Recall data
-result = await recall_tool.execute(key="user_preference")
+result = await recall_tool.execute(key="last_city")
 ```
 
-## Usage
+## Quick Start
 
-1. Set up your environment:
+1. Install dependencies:
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt  # Using uv is recommended
 ```
-**I'd highly recommend using uv**
 
-2. Create a `.env` file with your API credentials:
+2. Set up your API credentials in `.env`:
 ```env
 OPENROUTER_BASE_URL=your_api_base_url
 OPENROUTER_API_KEY=your_api_key
 ```
 
-3. Create a new tool:
-```python
-# tools/custom/my_tool.py
-from tools.base_tool import BaseTool
-from pydantic import BaseModel, Field
-
-class MyToolInput(BaseModel):
-    param: str = Field(..., min_length=1, description="Parameter description")
-
-class MyTool(BaseTool):
-    name = "my_tool"
-    description = "Tool description"
-    
-    async def execute(self, param: str) -> str:
-        # Validate input
-        request = MyToolInput(param=param)
-        return f"Processed {request.param}"
-```
-
-4. Run a conversation:
+3. Create a pup and run a conversation:
 ```python
 from tools.registry import ToolRegistry
+from pup import Pup
 
-# Tools are automatically discovered
+# Optional: Load tools if needed
 registry = ToolRegistry()
 registry.discover_tools()
-
-# Get tool schemas and functions
 tools = registry.get_schemas()
 tool_functions = registry.get_tool_functions()
 
-# Run conversation
-response = await pup.run(messages, tools, tool_functions)
+# Create a pup
+pup = Pup(
+    system_prompt="You are a helpful assistant...",
+    tools=tools,               # Optional
+    tool_functions=tool_functions  # Optional
+)
+
+# Run a conversation
+response = await pup.run("Hello! Can you help me?")
+print(response)
 ```
-
-## Features
-
-### Tool System
-- Automatic schema generation from type hints and docstrings
-- Input validation using Pydantic models
-- Support for enums and complex types
-- Coordinate parsing and validation
-- Automatic tool discovery and registration
-
-### Memory System
-- Key-value storage with validation
-- File-based persistence
-- Error handling and validation
-- Automatic schema generation
-
-### Response Handling
-- JSON schema validation
-- Markdown cleaning
-- Support for both structured and unstructured responses
-- Error handling for malformed responses
 
 ## Best Practices
 
-1. **Tool Development**
-   - Use Pydantic models for input validation
+1. **Keep It Simple**
+   - One tool = one clear purpose
+   - Clear system prompts
+   - Explicit validation rules
+
+2. **Handle Errors**
+   - Validate inputs early
    - Provide clear error messages
-   - Use type hints and docstrings
-   - Keep tools focused and single-purpose
-
-2. **Input Validation**
-   - Define constraints using Pydantic Field
-   - Use enums for fixed choices
-   - Validate early in the execute method
-   - Return clear error messages
-
-3. **Memory Usage**
-   - Use consistent key naming
-   - Validate both keys and values
-   - Handle missing values gracefully
-   - Clean up old entries when appropriate
-
-4. **Error Handling**
-   - Validate inputs before processing
-   - Provide informative error messages
-   - Handle edge cases explicitly
-   - Log errors appropriately
+   - Log important information
 
 ## Limitations
 
-- File-based memory system just for a test, not be suitable for anything real
-- Tool calls are processed sequentially
-- Memory is limited to simple key-value storage
-- No built-in support for streaming responses
+- Simple file-based memory system (not for production)
+- Sequential tool execution
+- No streaming support
 
 ## License
 
