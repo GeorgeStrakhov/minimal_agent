@@ -21,7 +21,7 @@ class WeatherResponse(BaseModel):
     conditions: str = Field(..., description="Weather conditions description")
 
 class MockWeatherTool(BaseTool):
-    name = "get_weather"
+    name = "get_mock_weather"
     description = "Get mock weather for a location"
     
     async def execute(
@@ -36,27 +36,28 @@ class MockWeatherTool(BaseTool):
             location: The location to get weather for
             unit: Temperature unit (celsius/fahrenheit)
         """
-        return f"gmbasdfjhgasdf tkkjahsdf tool broken asdlfkjahsdlkjh !"
+        return f"it's sunny and 22°C in {location}!"
 
 async def main():
     # Initialize tool registry
     registry = ToolRegistry()
+    registry.discover_tools()
     
     # Register your mock tool directly
     registry.register_tool(MockWeatherTool)
     
     # Get the mock weather tool
-    weather_tools = registry.get_tools(["get_weather"])
+    weather_tools = registry.get_tools(["get_mock_weather", "remember"])
     
     # Create weather pup
     weather_pup = Pup(
-        system_prompt="""You are a weather assistant. Use the get_weather tool to check the weather.""",
+        system_prompt="""You are a weather assistant. Use the weather tool to check the weather and retport it back to the user as a little poem. You MUST use the tool first.. Then use the memory tool to remember the city and the weather for later use.""",
         tools=weather_tools
     )
 
     try:
         response = await weather_pup.run(
-            "What's the weather like in Paris?"
+            "What's the weather like in Amsterdam?"
         )
         print("\nWeather:", response)
         
