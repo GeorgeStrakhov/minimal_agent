@@ -1,6 +1,6 @@
 from openai import OpenAI
 import os
-from typing import List, Dict, Any, Callable, Optional, Union
+from typing import List, Dict, Any, Callable, Optional, Union, Type, get_type_hints
 import json
 from loguru import logger
 from jsonschema import validate as validate_json
@@ -9,6 +9,7 @@ import asyncio
 from typing import Awaitable
 from dotenv import load_dotenv
 from errors import PupError
+from pydantic import BaseModel, create_model
 
 load_dotenv()
 
@@ -16,7 +17,7 @@ class Pup:
     def __init__(
         self,
         system_prompt: str,
-        json_response: Optional[Dict[str, Any]] = None,
+        json_response: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: str = "google/gemini-2.0-flash-001",
@@ -69,13 +70,28 @@ class Pup:
         
         self.system_prompt = system_prompt + "\n\n" + bail_instruction
         
+        # Initialize json_response and response_format
+        self.json_response = None
+        self.response_format = None
+
         if json_response:
+            # Convert json_response schema or Pydantic model to OpenAI format
+            if isinstance(json_response, type) and issubclass(json_response, BaseModel):
+                # Convert Pydantic model to JSON schema
+                self.json_response = json_response.model_json_schema()
+            else:
+                self.json_response = json_response
+
+            # Only use response_format for OpenAI models
+            if "openai" in model.lower():
+                self.response_format = {"type": "json_object"}
+            
+            # Always include JSON instructions in system prompt
             self.system_prompt += (
-                "\n\nYou MUST respond with valid JSON in this exact structure:\n" 
-                + json.dumps(json_response, indent=2) 
-                + "\nNever respond with plain text when JSON is required."
+                "\n\nYou MUST respond with valid JSON matching this schema:\n" 
+                + json.dumps(self.json_response, indent=2)
+                + "\nAlways respond with properly formatted JSON, never with plain text."
             )
-        self.json_response = json_response
         
         self.model = model
         self.max_iterations = max_iterations
@@ -176,11 +192,21 @@ class Pup:
                 }
                 if tools:
                     completion_args["tools"] = tools
+                if self.response_format:
+                    completion_args["response_format"] = self.response_format
+                
+                # Log the completion arguments
+                logger.debug("Sending completion request with args: {}", 
+                            {k: v for k, v in completion_args.items() if k != "messages"})
                 
                 completion = self.client.chat.completions.create(**completion_args)
                 
+                # Log the full completion response
+                logger.debug("Raw completion response: {}", completion)
+                
                 response_message = completion.choices[0].message
-                logger.debug("Model response: {}", response_message)
+                logger.debug("Response message content: {}", response_message.content)
+                logger.debug("Response message tool calls: {}", response_message.tool_calls)
 
                 # First, check if we have a valid response content
                 if response_message.content and response_message.content.strip():
@@ -196,19 +222,28 @@ class Pup:
                             details={"user_message": user_message}
                         )
 
+                    # If JSON response is expected, parse and validate
                     if self.json_response:
                         try:
-                            cleaned_data = self._clean_json_response(content)
+                            # Clean markdown code blocks if present
+                            if content.startswith('```'):
+                                content = content.split('```')[1]
+                                if content.startswith('json'):
+                                    content = content[4:]
+                                content = content.strip()
+                            
+                            # Parse and validate JSON
+                            cleaned_data = json.loads(content)
                             validate_json(instance=cleaned_data, schema=self.json_response)
                             return cleaned_data
                         except (json.JSONDecodeError, ValidationError) as e:
                             logger.error("Response validation failed: {}", e)
-                            if not response_message.tool_calls:
-                                return content
-                        except Exception as e:
-                            logger.error("Content cleaning failed: {}", e)
-                            if not response_message.tool_calls:
-                                return content
+                            raise PupError(
+                                type=PupError.TECHNICAL,
+                                subtype=PupError.SCHEMA_VIOLATION,
+                                message=str(e),
+                                details={"content": content}
+                            )
                     else:
                         return content
 

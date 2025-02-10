@@ -2,7 +2,7 @@
 
 A an opinionated, minimalistic framework for building AI pups (a.k.a. agents) who are reliable and do what you tell them to do, without extra magic.
 
-* uses OpenRouter and only works with models that support function calling
+* uses OpenRouter to support multiple LLM providers
 * uses Pydantic for input and output validation
 * treats the idea of "Agents" as simply smart functions: you tell them what to do and what kind of output you expect - and they run off and do it predictably, with the output you expect. Or they bail.
 * our pups (agents) are not trying to hold conversation history etc. beyond the scope of their current task.
@@ -14,14 +14,24 @@ This framework provides a simple way to create AI pups that can:
 - Remember information across conversations (via a memory tool if needed)
 - Return structured JSON responses
 - Handle multi-step conversations
+- Bail gracefully when uncertain
 
 ## Core Components
 
 ### Pup (`pup.py`)
 
-A pup can be created with or without tools:
+A pup can be created with or without tools and with optional JSON response validation:
 
 ```python
+from pydantic import BaseModel, Field
+
+# Define expected response structure using Pydantic
+class WeatherResponse(BaseModel):
+    location: str = Field(..., description="Name of the location")
+    coordinates: dict = Field(..., description="Geographic coordinates")
+    temperature: dict = Field(..., description="Temperature information")
+    conditions: str = Field(..., description="Weather conditions description")
+
 # Basic pup without tools
 zen_pup = Pup(
     system_prompt="You are a zen master, you always respond with a koan and nothing else."
@@ -30,15 +40,53 @@ zen_pup = Pup(
 # Advanced pup with tools and JSON validation
 weather_pup = Pup(
     system_prompt="You are a weather assistant...",
-    json_response=json_schema,  # Optional schema for validation
-    tools=tools,               # Optional tools for capabilities
+    json_response=WeatherResponse,  # Pydantic model for validation
+    tools=tools,                    # Optional tools for capabilities
     tool_functions=tool_functions
 )
 
 # Run conversations
 response = await zen_pup.run("What is the sound of one hand clapping?")
-response = await weather_pup.run("What's the weather in Chicago?")
+weather = await weather_pup.run("What's the weather in Chicago?")
 ```
+
+### JSON Response Validation
+
+The framework supports structured JSON responses with two approaches:
+
+1. **Pydantic Models** (Recommended):
+   ```python
+   class ResponseModel(BaseModel):
+       field1: str = Field(..., description="Field description")
+       field2: int = Field(..., description="Another field")
+   
+   pup = Pup(
+       system_prompt="Your prompt...",
+       json_response=ResponseModel
+   )
+   ```
+
+2. **Raw JSON Schema**:
+   ```python
+   json_schema = {
+       "type": "object",
+       "properties": {
+           "field1": {"type": "string"},
+           "field2": {"type": "integer"}
+       },
+       "required": ["field1", "field2"]
+   }
+   
+   pup = Pup(
+       system_prompt="Your prompt...",
+       json_response=json_schema
+   )
+   ```
+
+The framework automatically handles JSON responses from different LLM providers:
+- Uses native JSON mode for OpenAI models
+- Handles markdown-formatted JSON responses from other providers
+- Validates all responses against the provided schema
 
 ### Tools
 
@@ -121,11 +169,18 @@ print(response)
    - One tool = one clear purpose
    - Clear system prompts
    - Explicit validation rules
+   - Use Pydantic models for response validation
 
 2. **Handle Errors**
    - Validate inputs early
    - Provide clear error messages
    - Log important information
+   - Let pups bail when uncertain
+
+3. **Model Compatibility**
+   - Works with OpenAI, Google, Anthropic models via OpenRouter
+   - Automatically adapts JSON handling for different providers
+   - Use appropriate model for the task
 
 ## Limitations
 

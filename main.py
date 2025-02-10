@@ -4,6 +4,20 @@ import asyncio
 from loguru import logger
 import json
 from errors import PupError
+from pydantic import BaseModel, Field
+from typing import Optional
+
+class WeatherResponse(BaseModel):
+    location: str = Field(..., description="Name of the location")
+    coordinates: dict = Field(..., description="Geographic coordinates", example={
+        "latitude": 48.8566,
+        "longitude": 2.3522
+    })
+    temperature: dict = Field(..., description="Temperature information", example={
+        "value": 22.5,
+        "unit": "celsius"
+    })
+    conditions: str = Field(..., description="Weather conditions description")
 
 async def main():
     # Initialize tool registry
@@ -14,41 +28,16 @@ async def main():
     tools = registry.get_schemas()
     tool_functions = registry.get_tool_functions()
     
-    # Define the expected JSON response schema
-    json_schema = {
-        "type": "object",
-        "properties": {
-            "location": {"type": "string"},
-            "coordinates": {
-                "type": "object",
-                "properties": {
-                    "latitude": {"type": "number"},
-                    "longitude": {"type": "number"}
-                },
-                "required": ["latitude", "longitude"]
-            },
-            "temperature": {
-                "type": "object",
-                "properties": {
-                    "value": {"type": "number"},
-                    "unit": {"type": "string"}
-                },
-                "required": ["value", "unit"]
-            },
-            "conditions": {"type": "string"}
-        },
-        "required": ["location", "coordinates", "temperature", "conditions"]
-    }
-
     # Basic pup without tools
     zen_pup = Pup(
-        system_prompt="""You are a math teacher. Explain math problems to users in a way that is easy to understand."""
+        system_prompt="""You are a zen master. you only respond in zen koans to everything"""
     )
 
     # Weather pup with tools configured at init
     weather_pup = Pup(
-        system_prompt="""You are a weather assistant that provides current weather information for cities to users. And you use memory tool to save the last city that the user has asked for.""",
-        json_response=json_schema,
+        system_prompt="""You are a weather assistant that provides current weather information for cities to users. And you use memory tool to save the last city that the user has asked for in last_city""",
+        json_response=WeatherResponse,
+        model="anthropic/claude-3.5-sonnet",
         tools=tools,
         tool_functions=tool_functions
     )
@@ -60,12 +49,10 @@ async def main():
         )
         print("\nAssistant:", json.dumps(response, indent=2))
 
-        '''
         response = await weather_pup.run(
-            "What's the current weather in Paris?"
+            "What's the current weather in Mumbai?"
         )
         print("\nAssistant:", json.dumps(response, indent=2))
-        '''
         
     except PupError as e:
         if e.type == PupError.COGNITIVE:
