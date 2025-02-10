@@ -53,7 +53,7 @@ class Pup:
         Important Instructions:
         1. You are a specialized assistant with a specific task. Stay focused on that task.
         2. Do not engage in conversation or ask follow-up questions.
-        3. If you cannot complete the task with the information provided, respond with BAIL.
+        3. If you cannot complete the task with the information and toolsprovided, respond with BAIL.
         
         When to BAIL:
         - If required information is missing
@@ -64,7 +64,7 @@ class Pup:
         How to BAIL:
         Respond with: BAIL: <clear explanation of why you cannot proceed>
         
-        Remember: It's better to bail clearly than to guess or ask for clarification.
+        Remember: It's better to bail clearly than to guess wildly or ask for clarification.
         """
         
         self.system_prompt = system_prompt + "\n\n" + bail_instruction
