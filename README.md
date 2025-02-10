@@ -1,10 +1,10 @@
-# Minimal Agent Framework
+# SmartPups Framework
 
-A lightweight, extensible framework for building AI agents that can use tools and maintain memory across conversations. Features strong typing, input validation, and automatic schema generation.
+A lightweight, extensible framework for building AI pups that can use tools and maintain memory across conversations. Features strong typing, input validation, and automatic schema generation.
 
 ## Overview
 
-This framework provides a simple way to create AI agents that can:
+This framework provides a simple way to create AI pups that can:
 - Use multiple tools/functions with input validation
 - Maintain memory across conversations
 - Return structured JSON responses
@@ -13,16 +13,16 @@ This framework provides a simple way to create AI agents that can:
 
 ## Core Components
 
-### Agent (`agent.py`)
+### Pup (`pup.py`)
 
-The main agent class that handles:
+The main pup class that handles:
 - Async conversation management
 - Tool calling and response processing
 - JSON validation and cleaning
 - Response handling
 
 ```python
-agent = Agent(
+pup = Pup(
     base_url="your_api_base_url",
     api_key="your_api_key",
     model="model_name",
@@ -30,7 +30,7 @@ agent = Agent(
 )
 
 # Run a conversation
-response = await agent.run(messages, tools, tool_functions)
+response = await pup.run(messages, tools, tool_functions)
 ```
 
 ### Tool System
@@ -73,7 +73,7 @@ class WeatherTool(BaseTool):
 
 ### Memory System (`tools/memory/`)
 
-A tool-based memory system that allows the agent to:
+A tool-based memory system that allows the pup to:
 - Save information for future use
 - Recall previously stored information
 - Validate memory operations
@@ -137,7 +137,7 @@ tools = registry.get_schemas()
 tool_functions = registry.get_tool_functions()
 
 # Run conversation
-response = await agent.run(messages, tools, tool_functions)
+response = await pup.run(messages, tools, tool_functions)
 ```
 
 ## Features

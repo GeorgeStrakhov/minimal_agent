@@ -3,6 +3,7 @@ from pydantic import BaseModel, create_model
 import inspect
 import docstring_parser
 from loguru import logger
+from enum import Enum
 
 class BaseTool:
     name: str
@@ -27,6 +28,13 @@ class BaseTool:
             return {"type": "number"}
         elif param_type == bool:
             return {"type": "boolean"}
+        elif isinstance(param_type, type) and issubclass(param_type, Enum):
+            # Handle Enum types
+            return {
+                "type": "string",
+                "enum": [e.value for e in param_type],
+                "description": f"One of: {', '.join(e.value for e in param_type)}"
+            }
         elif isinstance(param_type, _GenericAlias):
             # Handle Optional types (Union[Type, None])
             if (param_type.__origin__ is Union and 

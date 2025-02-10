@@ -7,27 +7,56 @@ from jsonschema import validate as validate_json
 from jsonschema.exceptions import ValidationError
 import asyncio
 from typing import Awaitable
+from dotenv import load_dotenv
 
-class Agent:
+load_dotenv()
+
+class Pup:
     def __init__(
         self,
-        base_url: str,
-        api_key: str,
+        system_prompt: str,
+        json_response: Optional[Dict[str, Any]] = None,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
         model: str = "google/gemini-2.0-flash-001",
         max_iterations: int = 10
     ):
+        """
+        Initialize a new Pup.
+        
+        Args:
+            system_prompt: The system prompt that defines the pup's behavior
+            json_response: Optional schema for validating JSON responses
+            base_url: OpenAI API base URL (defaults to OPENROUTER_BASE_URL from env)
+            api_key: OpenAI API key (defaults to OPENROUTER_API_KEY from env)
+            model: Model to use for completions
+            max_iterations: Maximum number of tool call iterations
+        """
+        self.base_url = base_url or os.getenv("OPENROUTER_BASE_URL")
+        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
+        
+        if not self.base_url or not self.api_key:
+            raise ValueError("Must provide base_url and api_key either directly or via environment variables")
+            
         self.client = OpenAI(
-            base_url=base_url,
-            api_key=api_key,
+            base_url=self.base_url,
+            api_key=self.api_key,
         )
+        
+        # Store the system prompt and JSON schema
+        self.system_prompt = system_prompt
+        if json_response:
+            self.system_prompt += "\n\nYour final response must be a valid JSON object with this exact structure:\n" + json.dumps(json_response, indent=2)
+        self.json_response = json_response
+        
         self.model = model
         self.max_iterations = max_iterations
-        logger.debug("Agent initialized with model: {} and max_iterations: {}", 
+        logger.debug("Pup initialized with model: {} and max_iterations: {}", 
                     model, max_iterations)
 
-    def _clean_json_response(self, content: str) -> str:
+    def _clean_json_response(self, content: str) -> Dict[str, Any]:
         """
-        Clean up the response content by removing markdown formatting and other non-JSON elements.
+        Clean up the response content and return a Python dict.
         """
         # Find JSON content between triple backticks if present
         if '```' in content:
@@ -38,40 +67,65 @@ class Agent:
         
         # Remove any non-JSON text before or after the JSON object
         content = content.strip()
-        first_brace = content.find('{')
-        last_brace = content.rfind('}')
-        if first_brace != -1 and last_brace != -1:
-            content = content[first_brace:last_brace + 1]
         
-        return content.strip()
+        # Find the outermost JSON object
+        first_brace = content.find('{')
+        if first_brace == -1:
+            raise ValueError("No JSON object found in response")
+            
+        brace_count = 0
+        for i, char in enumerate(content[first_brace:], first_brace):
+            if char == '{':
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    content = content[first_brace:i+1]
+                    break
+        
+        # Parse the JSON
+        parsed = json.loads(content)
+        if not isinstance(parsed, dict):
+            raise ValueError("Response is not a JSON object")
+            
+        # Remove any schema-related fields
+        if "type" in parsed and "properties" in parsed:
+            parsed = {k: v for k, v in parsed.items() 
+                     if k not in ["type", "properties", "required"]}
+            
+        # Clean up any null values in nested objects
+        def clean_nulls(obj):
+            if isinstance(obj, dict):
+                return {k: clean_nulls(v) for k, v in obj.items() 
+                       if v is not None and v != {}}
+            return obj
+            
+        return clean_nulls(parsed)
 
     async def run(
         self,
-        messages: List[Dict[str, Any]],
+        user_message: str,
         tools: List[Dict[str, Any]],
-        tool_functions: Dict[str, Callable],
-        json_response: Optional[Dict[str, Any]] = None
+        tool_functions: Dict[str, Callable]
     ) -> Union[str, Dict[str, Any]]:
         """
-        Run the conversation with the given messages and tools until a final response is reached.
+        Run a conversation with the given user message and tools.
         
-        The agent can now provide a final response while also making tool calls.
-        Tool calls will be processed before returning the final response.
+        Args:
+            user_message: The user's message to respond to
+            tools: List of tool schemas
+            tool_functions: Dictionary of tool functions
+            
+        Returns:
+            The final response, either as a string or JSON object
         """
-        logger.debug("Starting conversation with {} messages", len(messages))
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": user_message}
+        ]
+        
+        logger.debug("Starting conversation with user message: {}", user_message)
         logger.debug("Available tools: {}", list(tool_functions.keys()))
-
-        if json_response:
-            # Instead of adding a new system message, modify the existing one
-            if messages and messages[0]["role"] == "system":
-                current_content = messages[0]["content"]
-                messages[0]["content"] = current_content + "\n\nYour final response must be a valid JSON object with this exact structure:\n" + json.dumps(json_response, indent=2)
-            else:
-                # If no system message exists, add one
-                messages = [{
-                    "role": "system",
-                    "content": "You must respond with a valid JSON object in this format:\n" + json.dumps(json_response, indent=2)
-                }] + messages
 
         iterations = 0
         while iterations < self.max_iterations:
@@ -88,24 +142,27 @@ class Agent:
             logger.debug("Model response: {}", response_message)
 
             # First, check if we have a valid response content
-            final_response = None
             if response_message.content and response_message.content.strip():
                 logger.info("Processing response content")
+                content = response_message.content.strip()
                 
-                if json_response:
+                if self.json_response:
                     try:
-                        cleaned_content = self._clean_json_response(response_message.content)
-                        logger.debug("Cleaned content for JSON parsing: {}", cleaned_content)
-                        
-                        response_content = json.loads(cleaned_content)
-                        validate_json(instance=response_content, schema=json_response)
-                        final_response = response_content
+                        # Parse and clean the JSON response
+                        cleaned_data = self._clean_json_response(content)
+                        # Validate against schema
+                        validate_json(instance=cleaned_data, schema=self.json_response)
+                        return cleaned_data
                     except (json.JSONDecodeError, ValidationError) as e:
                         logger.error("Response validation failed: {}", e)
                         if not response_message.tool_calls:
-                            raise
+                            return content
+                    except Exception as e:
+                        logger.error("Content cleaning failed: {}", e)
+                        if not response_message.tool_calls:
+                            return content
                 else:
-                    final_response = response_message.content
+                    return content
 
             # Then, handle any tool calls
             if response_message.tool_calls:
@@ -145,16 +202,16 @@ class Agent:
                         "content": result["function_response"]
                     } for result in tool_results]
                 ])
-                logger.debug("Updated messages: {}", messages)
+                # logger.debug("Updated messages: {}", messages)
                 
                 # Continue the conversation if we have tool calls
                 continue
 
             # If we reach here, we have no more tool calls
-            if final_response is None:
+            if response_message.content and response_message.content.strip():
                 logger.error("No valid response or tool calls received")
                 raise ValueError("Model must provide either a valid response or tool calls")
                 
-            return final_response
+            return response_message.content
 
         raise ValueError(f"Max iterations ({self.max_iterations}) reached without final response") 

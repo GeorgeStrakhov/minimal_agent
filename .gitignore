@@ -92,4 +92,4 @@ tmp/
 .env
 
 # Project specific
-memory.json 
+memory.json

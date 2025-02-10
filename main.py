@@ -1,19 +1,10 @@
-from openai import OpenAI
-import os
-from dotenv import load_dotenv
-from loguru import logger
-from agent import Agent
-import json
-from jsonschema.exceptions import ValidationError
 from tools.registry import ToolRegistry
-from typing import Any
+from pup import Pup
 import asyncio
+from loguru import logger
+import json
 
-load_dotenv()
-
-async def run_conversation():
-    logger.info("Starting conversation")
-    
+async def main():
     # Initialize tool registry
     registry = ToolRegistry()
     registry.discover_tools()
@@ -22,12 +13,6 @@ async def run_conversation():
     tools = registry.get_schemas()
     tool_functions = registry.get_tool_functions()
     
-    agent = Agent(
-        base_url=os.getenv("OPENROUTER_BASE_URL"),
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-        max_iterations=5
-    )
-
     # Define the expected JSON response schema
     json_schema = {
         "type": "object",
@@ -54,51 +39,55 @@ async def run_conversation():
         "required": ["location", "coordinates", "temperature", "conditions"]
     }
 
-    messages = [
+    # Create a weather pup with specific behavior
+    weather_pup = Pup(
+        system_prompt="""You are a helpful assistant that can check weather information and remember user preferences. 
+
+        Follow these steps in order:
+        1. First check if there's a last_city in memory using the recall tool
+        2. If no previous city is found AND the user hasn't specified a city, respond with: "No previous city found. Please specify a city."
+        3. Get the current weather for either:
+           - The city from memory (if found)
+           - OR the city specified in the user's message
+        4. ALWAYS use the remember tool to save the city name when providing the final response
+        5. Return ONLY the weather information as JSON, do not include the schema itself
+        
+        Important notes:
+        - Always include actual coordinates from the weather API response
+        - Never return null or empty values
+        - Remove any fields that don't have valid data
+        - Format numbers to 2 decimal places
+        
+        Example response format:
         {
-            "role": "system",
-            "content": """You are a helpful assistant that can check weather information and remember user preferences. 
-            
-            Follow these steps in order:
-            1. First check if there's a last_city in memory using the recall tool
-            2. If found, use that city, otherwise respond that no previous city was found
-            3. Get the current weather for the city
-            4. ALWAYS use the remember tool to save the last requested city with key="last_city"
-            5. Return the weather information as JSON
-            
-            Your final response must be a valid JSON object with these exact fields:
-            {
-                "location": "city name",
-                "coordinates": {
-                    "latitude": number,
-                    "longitude": number
-                },
-                "temperature": {
-                    "value": number,
-                    "unit": string
-                },
-                "conditions": string
-            }
-            
-            Do not include the schema definition in your response, just the actual values.
-            
-            Important: You must use the remember tool to save the city name before providing the final response."""
-        },
-        {
-            "role": "user",
-            "content": "What's the current weather the last city I asked for (use memory for last_city)?"
+            "location": "New York",
+            "coordinates": {
+                "latitude": 40.71,
+                "longitude": -74.01
+            },
+            "temperature": {
+                "value": 20.50,
+                "unit": "celsius"
+            },
+            "conditions": "sunny"
         }
-    ]
+        
+        Important: Only return JSON when you have actual weather data to report""",
+        json_response=json_schema
+    )
 
     try:
-        response = await agent.run(messages, tools, tool_functions, json_response=json_schema)
+        # Run the conversation with just the user message
+        response = await weather_pup.run(
+            "What's the current weather in Dubai?",
+            tools=tools,
+            tool_functions=tool_functions
+        )
         print("\nAssistant:", json.dumps(response, indent=2))
         
-    except ValueError as e:
-        print(f"Error: {e}")
-    except ValidationError as e:
-        print(f"JSON validation error: {e}")
+    except Exception as e:
+        logger.error(f"Error: {e}")
 
 if __name__ == "__main__":
     logger.info("Starting weather conversation application")
-    asyncio.run(run_conversation())
+    asyncio.run(main())
