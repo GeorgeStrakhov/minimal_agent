@@ -1,6 +1,16 @@
+<p align="center">
+  <img src="docs/assets/smartpup.png" alt="SmartPup Logo" width="300"/>
+</p>
+
 # SmartPup
 
 A minimalistic framework for building reliable AI agents (pups) that do exactly what you tell them to do, without extra magic.
+
+## Why?
+
+The existing agent frameworks feel too complex and bloated. Maybe they are right for some use cases, but my feeble brain needed something simpler. All this talk of "agents" is tricky because you can't really rely on an LLM to do what you want it to do. Not yet anyway. So I really want is not smart agents that will figure things out, but simply smart functions - that I can call with a system prompt and a bunch of tools and they will reliably do the one thing they are supposed to do. And if they can't - they will fail, ideally explaining why.
+
+So less like superintelligent "agents" and more like well trained puppies. You tell them what to do and they do it, bringing back exactly what you needed in the form you needed. Maybe in the future there is some pavlovian conditioning and training. But for now they are just like your average well trained dog: excitable, reliable, and not very smart.
 
 ## Features
 
