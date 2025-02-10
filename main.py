@@ -42,7 +42,7 @@ async def main():
 
     # Basic pup without tools
     zen_pup = Pup(
-        system_prompt="""You are a zen master, you always respond with a koan and nothing else."""
+        system_prompt="""You are a math teacher. Explain math problems to users in a way that is easy to understand."""
     )
 
     # Weather pup with tools configured at init
@@ -60,14 +60,16 @@ async def main():
         )
         print("\nAssistant:", json.dumps(response, indent=2))
 
+        '''
         response = await weather_pup.run(
             "What's the current weather in Paris?"
         )
         print("\nAssistant:", json.dumps(response, indent=2))
+        '''
         
     except PupError as e:
         if e.type == PupError.COGNITIVE:
-            logger.warning("Pup was confused: {} ({})", e.message, e.subtype)
+            logger.error("Pup was confused: {} ({})", e.message, e.subtype)
         elif e.subtype == PupError.INVALID_JSON:
             logger.error("Pup didn't return valid JSON: {}", e.message)
         elif e.subtype == PupError.SCHEMA_VIOLATION:

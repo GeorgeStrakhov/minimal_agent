@@ -264,6 +264,9 @@ class Pup:
 
             raise ValueError(f"Max iterations ({self.max_iterations}) reached without final response")
 
+        except PupError:
+            # Re-raise PupErrors without modification
+            raise
         except json.JSONDecodeError as e:
             raise PupError(
                 type=PupError.TECHNICAL,
@@ -281,9 +284,12 @@ class Pup:
         except ValueError as e:
             raise PupError(
                 type=PupError.TECHNICAL,
+                subtype=PupError.MISSING_REQUIREMENTS,
                 message=str(e)
             ) from e
         except Exception as e:
+            if isinstance(e.__cause__, PupError):
+                raise e.__cause__
             raise PupError(
                 type=PupError.TECHNICAL,
                 message="Unexpected error",
