@@ -111,4 +111,41 @@ class ToolRegistry:
             name: instance.execute
             for name, instance in self._tool_instances.items()
             if names is None or name in names
-        } 
+        }
+    
+    def list_tools(self) -> List[Dict[str, Union[str, Dict]]]:
+        """
+        Get a list of all available tools with their names, descriptions, and parameters.
+        
+        Returns:
+            List of dictionaries containing tool information with keys:
+            - name: Tool name
+            - description: Tool description
+            - parameters: Dictionary of parameter names and their descriptions
+        """
+        tool_list = []
+        
+        for name, instance in self._tool_instances.items():
+            # Get the execute method's signature
+            from inspect import signature, Parameter
+            sig = signature(instance.execute)
+            
+            # Build parameters info
+            parameters = {}
+            for param_name, param in sig.parameters.items():
+                if param_name != 'self':  # Skip self parameter
+                    param_info = {
+                        'type': str(param.annotation.__name__) if param.annotation != Parameter.empty else 'any',
+                        'description': '',  # Will be populated from docstring if available
+                        'default': None if param.default == Parameter.empty else str(param.default)
+                    }
+                    parameters[param_name] = param_info
+            
+            tool_info = {
+                'name': instance.name,
+                'description': instance.description,
+                'parameters': parameters
+            }
+            tool_list.append(tool_info)
+            
+        return tool_list 

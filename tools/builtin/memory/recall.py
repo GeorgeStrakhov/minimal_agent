@@ -8,7 +8,7 @@ class RecallRequest(BaseModel):
 
 class RecallTool(BaseTool):
     name = "recall"
-    description = "Recall information from memory"
+    description = "Recall information from key-value memory by key"
     
     async def execute(
         self,
