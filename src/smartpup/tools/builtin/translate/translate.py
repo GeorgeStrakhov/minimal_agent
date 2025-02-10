@@ -1,4 +1,5 @@
-from tools import BaseTool, EnvVar, ToolEnv
+from smartpup.tools.base import BaseTool
+from smartpup.tools.env import EnvVar, ToolEnv
 from pydantic import BaseModel, Field
 from openai import OpenAI
 import os

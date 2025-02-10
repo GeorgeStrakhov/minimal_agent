@@ -1,4 +1,4 @@
-from tools import BaseTool
+from smartpup.tools.base import BaseTool
 from datetime import datetime
 from enum import Enum
 from typing import Optional

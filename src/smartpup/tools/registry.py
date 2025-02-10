@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Dict, Type, List, Union, Optional
 import importlib.util
 import inspect
-from .base_tool import BaseTool
+from .base import BaseTool
 from loguru import logger
 
 class ToolRegistry:
@@ -10,23 +10,27 @@ class ToolRegistry:
         self.tools: Dict[str, Type[BaseTool]] = {}
         self._tool_instances: Dict[str, BaseTool] = {}
         
-    def discover_tools(self, tools_dir: str = "tools", tool_names: Optional[List[str]] = None):
+    def discover_tools(self, tools_dir: str = None, tool_names: Optional[List[str]] = None):
         """
         Auto-discover and register tools
         
         Args:
-            tools_dir: Directory to search for tools
-            tool_names: Optional list of specific tool names to load. If None, loads all tools.
+            tools_dir: Optional directory to search for tools. If None, uses built-in tools.
+            tool_names: Optional list of specific tool names to load.
         """
-        tools_path = Path(tools_dir).resolve()
-        logger.info(f"Searching for tools in: {tools_path}")
+        if tools_dir is None:
+            # Use the builtin tools directory
+            tools_dir = Path(__file__).parent / "builtin"
+        else:
+            tools_dir = Path(tools_dir)
+        logger.info(f"Searching for tools in: {tools_dir}")
         
         # Reset tool registries if we're doing a fresh discovery
         self.tools.clear()
         self._tool_instances.clear()
         
         # Recursively find all Python files
-        for file in tools_path.rglob("*.py"):
+        for file in tools_dir.rglob("*.py"):
             # Skip __init__.py and base files
             if file.name.startswith("_") or file.name == "base_tool.py" or file.name == "registry.py":
                 logger.debug(f"Skipping file: {file}")
@@ -34,7 +38,7 @@ class ToolRegistry:
             
             try:
                 # Force reload the module to pick up new environment variables
-                module_name = str(file.relative_to(tools_path).with_suffix("")).replace("/", ".")
+                module_name = str(file.relative_to(tools_dir).with_suffix("")).replace("/", ".")
                 logger.debug(f"Attempting to load module: {module_name} from {file}")
                 
                 spec = importlib.util.spec_from_file_location(module_name, str(file))

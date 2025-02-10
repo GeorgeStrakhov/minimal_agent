@@ -1,5 +1,5 @@
-from tools import BaseTool
-from tools.env import ToolEnv, EnvVar
+from smartpup.tools.base import BaseTool
+from smartpup.tools.env import ToolEnv, EnvVar
 from pydantic import BaseModel, Field
 import json
 import os

@@ -1,4 +1,4 @@
-from tools import BaseTool
+from smartpup.tools.base import BaseTool
 from pydantic import BaseModel, Field
 from typing import Optional
 import httpx

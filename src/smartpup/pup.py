@@ -8,7 +8,8 @@ from jsonschema.exceptions import ValidationError
 import asyncio
 from typing import Awaitable
 from dotenv import load_dotenv
-from errors import PupError
+from .errors import PupError
+from .config import config
 from pydantic import BaseModel, create_model
 
 load_dotenv()
@@ -20,9 +21,8 @@ class Pup:
         json_response: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
-        #model: str = "google/gemini-2.0-flash-001",
-        model: str = "openai/gpt-4o-mini",
-        max_iterations: int = 10,
+        model: Optional[str] = None,
+        max_iterations: Optional[int] = None,
         tools: Optional[Dict[str, Dict[str, Any]]] = None
     ):
         """
@@ -31,17 +31,17 @@ class Pup:
         Args:
             system_prompt: The system prompt that defines the pup's behavior
             json_response: Optional schema for validating JSON responses
-            base_url: OpenAI API base URL (defaults to OPENROUTER_BASE_URL from env)
-            api_key: OpenAI API key (defaults to OPENROUTER_API_KEY from env)
-            model: Model to use for completions
-            max_iterations: Maximum number of tool call iterations
+            base_url: OpenAI API base URL (defaults to config or env OPENROUTER_BASE_URL)
+            api_key: OpenAI API key (defaults to config or env OPENROUTER_API_KEY)
+            model: Model to use for completions (defaults to config default_model)
+            max_iterations: Maximum number of tool call iterations (defaults to config max_iterations)
             tools: Optional dictionary of tool configurations containing schemas and functions
         """
-        self.base_url = base_url or os.getenv("OPENROUTER_BASE_URL")
-        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
+        self.base_url = base_url or config.openrouter_base_url or os.getenv("OPENROUTER_BASE_URL")
+        self.api_key = api_key or config.openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
         
         if not self.base_url or not self.api_key:
-            raise ValueError("Must provide base_url and api_key either directly or via environment variables")
+            raise ValueError("Must provide base_url and api_key either directly, via config, or via environment variables")
             
         self.client = OpenAI(
             base_url=self.base_url,
@@ -53,7 +53,7 @@ class Pup:
         Important Instructions:
         1. You are a specialized assistant with a specific task. Stay focused on that task.
         2. Do not engage in conversation or ask follow-up questions.
-        3. If you cannot complete the task with the information and toolsprovided, respond with BAIL.
+        3. If you cannot complete the task with the information and tools provided, respond with BAIL.
         
         When to BAIL:
         - If required information is missing
@@ -68,21 +68,22 @@ class Pup:
         """
         
         self.system_prompt = system_prompt + "\n\n" + bail_instruction
+        self.model = model or config.default_model
+        self.max_iterations = max_iterations or config.max_iterations
         
         # Initialize json_response and response_format
         self.json_response = None
         self.response_format = None
-
+        
         if json_response:
             # Convert json_response schema or Pydantic model to OpenAI format
             if isinstance(json_response, type) and issubclass(json_response, BaseModel):
-                # Convert Pydantic model to JSON schema
                 self.json_response = json_response.model_json_schema()
             else:
                 self.json_response = json_response
 
             # Only use response_format for OpenAI models
-            if "openai" in model.lower():
+            if "openai" in self.model.lower():
                 self.response_format = {"type": "json_object"}
             
             # Always include JSON instructions in system prompt
@@ -92,14 +93,12 @@ class Pup:
                 + "\nAlways respond with properly formatted JSON, never with plain text."
             )
         
-        self.model = model
-        self.max_iterations = max_iterations
         self.tools = tools
         self.tool_schemas = [t['schema'] for t in tools.values()] if tools else None
         self.tool_functions = {name: t['function'] for name, t in tools.items()} if tools else None
         
         logger.debug("Pup initialized with model: {} and max_iterations: {}", 
-                    model, max_iterations)
+                    self.model, self.max_iterations)
 
     def _clean_json_response(self, content: str) -> Dict[str, Any]:
         """

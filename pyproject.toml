@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "smartpup"
+version = "0.1.0"
+authors = [
+  { name="George Strakhov", email="george.strakhov@gmail.com" },
+]
+description = "A minimalistic framework for building reliable AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "openai>=1.0.0,<2.0.0",
+    "pydantic>=2.0.0,<3.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+    "loguru>=0.7.0,<0.8.0",
+    "httpx>=0.24.0,<0.29.0",
+    "docstring-parser>=0.15,<0.17",
+    "jsonschema>=4.17.0,<5.0.0"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/georgestrakhov/smartpup"
+"Bug Tracker" = "https://github.com/georgestrakhov/smartpup/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/smartpup"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py" 
