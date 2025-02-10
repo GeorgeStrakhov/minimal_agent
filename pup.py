@@ -19,7 +19,9 @@ class Pup:
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: str = "google/gemini-2.0-flash-001",
-        max_iterations: int = 10
+        max_iterations: int = 10,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_functions: Optional[Dict[str, Callable]] = None
     ):
         """
         Initialize a new Pup.
@@ -31,6 +33,8 @@ class Pup:
             api_key: OpenAI API key (defaults to OPENROUTER_API_KEY from env)
             model: Model to use for completions
             max_iterations: Maximum number of tool call iterations
+            tools: Optional list of tool schemas
+            tool_functions: Optional dictionary of tool functions
         """
         self.base_url = base_url or os.getenv("OPENROUTER_BASE_URL")
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
@@ -51,6 +55,9 @@ class Pup:
         
         self.model = model
         self.max_iterations = max_iterations
+        self.tools = tools
+        self.tool_functions = tool_functions
+        
         logger.debug("Pup initialized with model: {} and max_iterations: {}", 
                     model, max_iterations)
 
@@ -105,38 +112,47 @@ class Pup:
     async def run(
         self,
         user_message: str,
-        tools: List[Dict[str, Any]],
-        tool_functions: Dict[str, Callable]
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_functions: Optional[Dict[str, Callable]] = None
     ) -> Union[str, Dict[str, Any]]:
         """
-        Run a conversation with the given user message and tools.
+        Run a conversation with the given user message and optional tools.
         
         Args:
             user_message: The user's message to respond to
-            tools: List of tool schemas
-            tool_functions: Dictionary of tool functions
+            tools: Optional list of tool schemas
+            tool_functions: Optional dictionary of tool functions
             
         Returns:
             The final response, either as a string or JSON object
         """
+        # Use instance tools if not overridden by run arguments
+        tools = tools or self.tools
+        tool_functions = tool_functions or self.tool_functions
+        
         messages = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_message}
         ]
         
         logger.debug("Starting conversation with user message: {}", user_message)
-        logger.debug("Available tools: {}", list(tool_functions.keys()))
+        if tools:
+            logger.debug("Available tools: {}", list(tool_functions.keys()))
 
         iterations = 0
         while iterations < self.max_iterations:
             iterations += 1
             logger.info(f"Starting iteration {iterations}/{self.max_iterations}")
             
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=tools
-            )
+            # Only include tools if they're provided
+            completion_args = {
+                "model": self.model,
+                "messages": messages,
+            }
+            if tools:
+                completion_args["tools"] = tools
+            
+            completion = self.client.chat.completions.create(**completion_args)
             
             response_message = completion.choices[0].message
             logger.debug("Model response: {}", response_message)
@@ -148,9 +164,7 @@ class Pup:
                 
                 if self.json_response:
                     try:
-                        # Parse and clean the JSON response
                         cleaned_data = self._clean_json_response(content)
-                        # Validate against schema
                         validate_json(instance=cleaned_data, schema=self.json_response)
                         return cleaned_data
                     except (json.JSONDecodeError, ValidationError) as e:
@@ -164,8 +178,8 @@ class Pup:
                 else:
                     return content
 
-            # Then, handle any tool calls
-            if response_message.tool_calls:
+            # Only handle tool calls if tools were provided
+            if tools and response_message.tool_calls:
                 logger.info("Processing tool calls")
                 tool_results = []
                 

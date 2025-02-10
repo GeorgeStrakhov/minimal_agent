@@ -39,49 +39,28 @@ async def main():
         "required": ["location", "coordinates", "temperature", "conditions"]
     }
 
-    # Create a weather pup with specific behavior
-    weather_pup = Pup(
-        system_prompt="""You are a helpful assistant that can check weather information and remember user preferences. 
+    # Basic pup without tools
+    zen_pup = Pup(
+        system_prompt="""You are a zen master, you always respond with a koan and nothing else."""
+    )
 
-        Follow these steps in order:
-        1. First check if there's a last_city in memory using the recall tool
-        2. If no previous city is found AND the user hasn't specified a city, respond with: "No previous city found. Please specify a city."
-        3. Get the current weather for either:
-           - The city from memory (if found)
-           - OR the city specified in the user's message
-        4. ALWAYS use the remember tool to save the city name when providing the final response
-        5. Return ONLY the weather information as JSON, do not include the schema itself
-        
-        Important notes:
-        - Always include actual coordinates from the weather API response
-        - Never return null or empty values
-        - Remove any fields that don't have valid data
-        - Format numbers to 2 decimal places
-        
-        Example response format:
-        {
-            "location": "New York",
-            "coordinates": {
-                "latitude": 40.71,
-                "longitude": -74.01
-            },
-            "temperature": {
-                "value": 20.50,
-                "unit": "celsius"
-            },
-            "conditions": "sunny"
-        }
-        
-        Important: Only return JSON when you have actual weather data to report""",
-        json_response=json_schema
+    # Weather pup with tools configured at init
+    weather_pup = Pup(
+        system_prompt="""You are a weather assistant, you always respond with the current weather in the specified city using available tools. Don't forget to update the memory about the last city that the user has asked for.""",
+        json_response=json_schema,
+        tools=tools,
+        tool_functions=tool_functions
     )
 
     try:
-        # Run the conversation with just the user message
+        # Run conversations
+        response = await zen_pup.run(
+            "What's the current weather in Dubai?"
+        )
+        print("\nAssistant:", json.dumps(response, indent=2))
+
         response = await weather_pup.run(
-            "What's the current weather in Dubai?",
-            tools=tools,
-            tool_functions=tool_functions
+            "What's the current weather in Chicago?"
         )
         print("\nAssistant:", json.dumps(response, indent=2))
         
