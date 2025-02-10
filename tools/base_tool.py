@@ -80,14 +80,13 @@ class BaseTool:
             if param.default is param.empty and name != 'self'
         ]
     
-    @classmethod
-    def get_schema(cls) -> Dict[str, Any]:
+    def get_schema(self) -> Dict[str, Any]:
         """
         Auto-generates OpenAI tool schema from the execute method's type hints 
         and docstring
         """
         # Get the execute method
-        execute_method = cls.execute
+        execute_method = self.execute
         
         # Get type hints and docstring
         hints = get_type_hints(execute_method)
@@ -98,16 +97,16 @@ class BaseTool:
         
         # Parse the main description from the docstring
         parsed_doc = docstring_parser.parse(doc)
-        description = parsed_doc.short_description or cls.description
+        description = parsed_doc.short_description or self.description
         
         # Generate parameters schema
-        parameters, required = cls._get_parameter_schema(hints, doc)
+        parameters, required = self._get_parameter_schema(hints, doc)
         
         # Create the full schema
         schema = {
             "type": "function",
             "function": {
-                "name": cls.name,
+                "name": self.name,
                 "description": description,
                 "parameters": {
                     "type": "object",

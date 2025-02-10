@@ -22,8 +22,7 @@ class Pup:
         api_key: Optional[str] = None,
         model: str = "google/gemini-2.0-flash-001",
         max_iterations: int = 10,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        tool_functions: Optional[Dict[str, Callable]] = None
+        tools: Optional[Dict[str, Dict[str, Any]]] = None
     ):
         """
         Initialize a new Pup.
@@ -35,8 +34,7 @@ class Pup:
             api_key: OpenAI API key (defaults to OPENROUTER_API_KEY from env)
             model: Model to use for completions
             max_iterations: Maximum number of tool call iterations
-            tools: Optional list of tool schemas
-            tool_functions: Optional dictionary of tool functions
+            tools: Optional dictionary of tool configurations containing schemas and functions
         """
         self.base_url = base_url or os.getenv("OPENROUTER_BASE_URL")
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
@@ -96,7 +94,8 @@ class Pup:
         self.model = model
         self.max_iterations = max_iterations
         self.tools = tools
-        self.tool_functions = tool_functions
+        self.tool_schemas = [t['schema'] for t in tools.values()] if tools else None
+        self.tool_functions = {name: t['function'] for name, t in tools.items()} if tools else None
         
         logger.debug("Pup initialized with model: {} and max_iterations: {}", 
                     model, max_iterations)
@@ -152,24 +151,26 @@ class Pup:
     async def run(
         self,
         user_message: str,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        tool_functions: Optional[Dict[str, Callable]] = None
+        tools: Optional[Dict[str, Dict[str, Any]]] = None
     ) -> Union[str, Dict[str, Any]]:
         """
         Run a conversation with the given user message and optional tools.
         
         Args:
             user_message: The user's message to respond to
-            tools: Optional list of tool schemas
-            tool_functions: Optional dictionary of tool functions
+            tools: Optional dictionary of tool configurations to override instance tools
             
         Returns:
             The final response, either as a string or JSON object
         """
         try:
             # Use instance tools if not overridden by run arguments
-            tools = tools or self.tools
-            tool_functions = tool_functions or self.tool_functions
+            if tools:
+                tool_schemas = [t['schema'] for t in tools.values()]
+                tool_functions = {name: t['function'] for name, t in tools.items()}
+            else:
+                tool_schemas = self.tool_schemas
+                tool_functions = self.tool_functions
             
             messages = [
                 {"role": "system", "content": self.system_prompt},
@@ -177,7 +178,7 @@ class Pup:
             ]
             
             logger.debug("Starting conversation with user message: {}", user_message)
-            if tools:
+            if tool_schemas:
                 logger.debug("Available tools: {}", list(tool_functions.keys()))
 
             iterations = 0
@@ -190,8 +191,8 @@ class Pup:
                     "model": self.model,
                     "messages": messages,
                 }
-                if tools:
-                    completion_args["tools"] = tools
+                if tool_schemas:
+                    completion_args["tools"] = tool_schemas
                 if self.response_format:
                     completion_args["response_format"] = self.response_format
                 
@@ -248,7 +249,7 @@ class Pup:
                         return content
 
                 # Only handle tool calls if tools were provided
-                if tools and response_message.tool_calls:
+                if tool_schemas and response_message.tool_calls:
                     logger.info("Processing tool calls")
                     tool_results = []
                     

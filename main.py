@@ -22,32 +22,36 @@ class WeatherResponse(BaseModel):
 async def main():
     # Initialize tool registry
     registry = ToolRegistry()
+    
+    # Load all tools
     registry.discover_tools()
     
-    # Get tools and functions
-    tools = registry.get_schemas()
-    tool_functions = registry.get_tool_functions()
+    # Or load specific tools by name
+    # registry.discover_tools(tool_names=["get_weather", "get_datetime", "remember", "recall"])
+    
+    # Get tools and functions in one call
+    tools = registry.get_tools()
     
     # Basic pup without tools
     zen_pup = Pup(
         system_prompt="""You are a zen master. you only respond in zen koans to everything"""
     )
 
-    # Weather pup with tools configured at init
+    # Weather pup with specific tools
+    weather_tools = registry.get_tools(["get_weather", "remember", "recall"])
     weather_pup = Pup(
         system_prompt="""You are a weather assistant that provides current weather information for cities to users. And you use memory tool to save the last city that the user has asked for in last_city""",
         json_response=WeatherResponse,
         model="anthropic/claude-3.5-sonnet",
-        tools=tools,
-        tool_functions=tool_functions
+        tools=weather_tools
     )
 
-    # Time pup with datetime tool
+    # Time pup with datetime tool only
+    time_tools = registry.get_tools(["get_datetime"])
     time_pup = Pup(
         system_prompt="""You are a time assistant that helps users with date and time information. 
         You should use the get_datetime tool to provide accurate current time information.""",
-        tools=tools,
-        tool_functions=tool_functions
+        tools=time_tools
     )
 
     try:

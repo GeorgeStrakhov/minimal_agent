@@ -24,6 +24,7 @@ A pup can be created with or without tools and with optional JSON response valid
 
 ```python
 from pydantic import BaseModel, Field
+from tools.registry import ToolRegistry
 
 # Define expected response structure using Pydantic
 class WeatherResponse(BaseModel):
@@ -32,17 +33,23 @@ class WeatherResponse(BaseModel):
     temperature: dict = Field(..., description="Temperature information")
     conditions: str = Field(..., description="Weather conditions description")
 
+# Initialize tool registry and discover tools
+registry = ToolRegistry()
+registry.discover_tools()  # Discovers all tools
+# Or load specific tools:
+# registry.discover_tools(tool_names=["get_weather", "get_datetime"])
+
 # Basic pup without tools
 zen_pup = Pup(
     system_prompt="You are a zen master, you always respond with a koan and nothing else."
 )
 
-# Advanced pup with tools and JSON validation
+# Weather pup with specific tools
+weather_tools = registry.get_tools(["get_weather", "remember"])
 weather_pup = Pup(
     system_prompt="You are a weather assistant...",
     json_response=WeatherResponse,  # Pydantic model for validation
-    tools=tools,                    # Optional tools for capabilities
-    tool_functions=tool_functions
+    tools=weather_tools            # Dictionary containing tool schemas and functions
 )
 
 # Run conversations
@@ -50,50 +57,13 @@ response = await zen_pup.run("What is the sound of one hand clapping?")
 weather = await weather_pup.run("What's the weather in Chicago?")
 ```
 
-### JSON Response Validation
-
-The framework supports structured JSON responses with two approaches:
-
-1. **Pydantic Models** (Recommended):
-   ```python
-   class ResponseModel(BaseModel):
-       field1: str = Field(..., description="Field description")
-       field2: int = Field(..., description="Another field")
-   
-   pup = Pup(
-       system_prompt="Your prompt...",
-       json_response=ResponseModel
-   )
-   ```
-
-2. **Raw JSON Schema**:
-   ```python
-   json_schema = {
-       "type": "object",
-       "properties": {
-           "field1": {"type": "string"},
-           "field2": {"type": "integer"}
-       },
-       "required": ["field1", "field2"]
-   }
-   
-   pup = Pup(
-       system_prompt="Your prompt...",
-       json_response=json_schema
-   )
-   ```
-
-The framework automatically handles JSON responses from different LLM providers:
-- Uses native JSON mode for OpenAI models
-- Handles markdown-formatted JSON responses from other providers
-- Validates all responses against the provided schema
-
 ### Tools
 
 Tools are self-contained modules that give pups additional capabilities. They:
 - Auto-generate their schemas from Python type hints
 - Validate inputs using Pydantic
 - Support async execution
+- Are automatically discovered and managed by the ToolRegistry
 
 Example tool:
 
@@ -115,16 +85,48 @@ class WeatherTool(BaseTool):
         return f"Weather in {location} is sunny"
 ```
 
+### Tool Registry
+
+The ToolRegistry manages tool discovery and instantiation:
+
+```python
+# Initialize registry
+registry = ToolRegistry()
+
+# Load all available tools
+registry.discover_tools()
+
+# Or load specific tools by name
+registry.discover_tools(tool_names=["get_weather", "get_datetime"])
+
+# Get tools for a specific pup
+weather_tools = registry.get_tools(["get_weather", "remember"])
+datetime_tools = registry.get_tools(["get_datetime"])
+
+# Create pup with tools
+weather_pup = Pup(
+    system_prompt="You are a weather assistant...",
+    tools=weather_tools
+)
+```
+
 ### Memory System
 
 A simple key-value store that persists between conversations:
 
 ```python
-# Save data
-await remember_tool.execute(key="last_city", value="Chicago")
+# Get memory tools
+memory_tools = registry.get_tools(["remember", "recall"])
 
-# Recall data
-result = await recall_tool.execute(key="last_city")
+# Create pup with memory capabilities
+memory_pup = Pup(
+    system_prompt="You are an assistant that remembers things...",
+    tools=memory_tools
+)
+
+# Use memory in conversations
+await memory_pup.run("Remember that my favorite color is blue")
+await memory_pup.run("What's my favorite color?")
 ```
 
 ## Quick Start
@@ -145,17 +147,17 @@ OPENROUTER_API_KEY=your_api_key
 from tools.registry import ToolRegistry
 from pup import Pup
 
-# Optional: Load tools if needed
+# Load tools if needed
 registry = ToolRegistry()
 registry.discover_tools()
-tools = registry.get_schemas()
-tool_functions = registry.get_tool_functions()
+tools = registry.get_tools()  # Get all tools
+# Or get specific tools:
+# tools = registry.get_tools(["get_weather", "get_datetime"])
 
 # Create a pup
 pup = Pup(
     system_prompt="You are a helpful assistant...",
-    tools=tools,               # Optional
-    tool_functions=tool_functions  # Optional
+    tools=tools  # Optional
 )
 
 # Run a conversation
@@ -171,13 +173,19 @@ print(response)
    - Explicit validation rules
    - Use Pydantic models for response validation
 
-2. **Handle Errors**
+2. **Tool Management**
+   - Use ToolRegistry to manage tools
+   - Load only the tools each pup needs
+   - Group related tools when appropriate
+   - Keep tool implementations focused and testable
+
+3. **Handle Errors**
    - Validate inputs early
    - Provide clear error messages
    - Log important information
    - Let pups bail when uncertain
 
-3. **Model Compatibility**
+4. **Model Compatibility**
    - Works with OpenAI, Google, Anthropic models via OpenRouter
    - Automatically adapts JSON handling for different providers
    - Use appropriate model for the task
