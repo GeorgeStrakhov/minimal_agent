@@ -110,6 +110,90 @@ weather_pup = Pup(
 )
 ```
 
+### Custom Tools
+
+You can create custom tools in two ways:
+
+#### 1. Quick Mock Tools (Great for Testing)
+
+Define a tool directly in your code:
+
+```python
+from tools import BaseTool
+
+class MockWeatherTool(BaseTool):
+    name = "get_weather"
+    description = "Get mock weather for a location"
+    
+    async def execute(
+        self,
+        location: str,
+        unit: str = "celsius"
+    ) -> str:
+        """Get mock weather for a location"""
+        return f"It's always sunny and 22°{unit[0].upper()} in {location}!"
+
+# Register and use the mock tool
+registry = ToolRegistry()
+registry.register_tool(MockWeatherTool)
+weather_tools = registry.get_tools(["get_weather"])
+```
+
+#### 2. Full Tool Implementation
+
+Create a proper tool package in `tools/custom/`:
+
+```bash
+mkdir -p tools/custom/my_tool
+touch tools/custom/my_tool/__init__.py
+```
+
+Then implement your tool:
+
+```python
+# tools/custom/my_tool/my_tool.py
+from tools import BaseTool, EnvVar, ToolEnv
+from pydantic import BaseModel, Field
+
+class MyTool(BaseTool):
+    name = "my_tool"
+    description = "Description of what my tool does"
+    
+    # Optional: Define required environment variables
+    env = ToolEnv(vars=[
+        EnvVar(
+            name="MY_API_KEY",
+            description="API key for my service",
+            required=True
+        )
+    ])
+    
+    async def execute(
+        self,
+        param1: str,
+        param2: int = 42
+    ) -> str:
+        """
+        Tool implementation
+        
+        Args:
+            param1: Description of param1
+            param2: Description of param2
+        """
+        return f"Tool response: {param1}, {param2}"
+```
+
+Export it in `__init__.py`:
+
+```python
+# tools/custom/my_tool/__init__.py
+from .my_tool import MyTool
+
+__all__ = ['MyTool']
+```
+
+The tool will be auto-discovered when you call `registry.discover_tools()`.
+
 ### Memory System
 
 A simple key-value store that persists between conversations:

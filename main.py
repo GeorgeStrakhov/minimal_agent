@@ -1,4 +1,5 @@
 from tools.registry import ToolRegistry
+from tools import BaseTool
 from pup import Pup
 import asyncio
 from loguru import logger
@@ -19,33 +20,45 @@ class WeatherResponse(BaseModel):
     })
     conditions: str = Field(..., description="Weather conditions description")
 
+class MockWeatherTool(BaseTool):
+    name = "get_weather"
+    description = "Get mock weather for a location"
+    
+    async def execute(
+        self,
+        location: str,
+        unit: str = "celsius"
+    ) -> str:
+        """
+        Get mock weather for a location
+        
+        Args:
+            location: The location to get weather for
+            unit: Temperature unit (celsius/fahrenheit)
+        """
+        return f"gmbasdfjhgasdf tkkjahsdf tool broken asdlfkjahsdlkjh !"
+
 async def main():
     # Initialize tool registry
     registry = ToolRegistry()
     
-    # Load all tools
-    registry.discover_tools()
+    # Register your mock tool directly
+    registry.register_tool(MockWeatherTool)
     
-    # Get translation tools
-    translate_tools = registry.get_tools(["translate"])
+    # Get the mock weather tool
+    weather_tools = registry.get_tools(["get_weather"])
     
-    # Create translator pup
-    translator_pup = Pup(
-        system_prompt="""You are a translation assistant. Use the translate tool to translate text accurately.""",
-        tools=translate_tools
+    # Create weather pup
+    weather_pup = Pup(
+        system_prompt="""You are a weather assistant. Use the get_weather tool to check the weather.""",
+        tools=weather_tools
     )
 
     try:
-        # Test translations
-        response = await translator_pup.run(
-            "Translate 'Hello, how are you?' to Spanish"
+        response = await weather_pup.run(
+            "What's the weather like in Paris?"
         )
-        print("\nTranslation:", response)
-        
-        response = await translator_pup.run(
-            "Now translate 'I love programming' to French"
-        )
-        print("\nTranslation:", response)
+        print("\nWeather:", response)
         
     except PupError as e:
         if e.type == PupError.COGNITIVE:
@@ -63,5 +76,5 @@ async def main():
         logger.error("Unexpected error: {}", str(e))
 
 if __name__ == "__main__":
-    logger.info("Starting translation test")
+    logger.info("Starting weather test")
     asyncio.run(main())
