@@ -8,7 +8,7 @@ A minimalistic "anti-agentic" framework for building reliable AI puppies that do
 
 ## Why?
 
-The existing agent frameworks feel too complex and bloated. Maybe they are right for some use cases, but my feeble brain needed something simpler. All this talk of "agents" is tricky because you can't really rely on an LLM to do what you want it to do. Not yet anyway. So I really want is not smart agents that will figure things out, but simply smart functions - that I can call with a system prompt and a bunch of tools and they will reliably do the one thing they are supposed to do. And if they can't - they will fail, ideally explaining why.
+The existing agent frameworks feel too complex and bloated. Maybe they are right for some use cases, but my feeble brain needed something simpler. All this talk of "agents" is tricky because you can't rely on an LLM to do what you want it to do. Not yet anyway. So what I want is not super-smart "agents" that will figure things out completely by themselves (spoiler: they won't). What I want is smart functions: you call them, you give some inputs, you know what you get back. And behind the scenes they may be doing some fuzzy stuff that a normal function won't be able to do. But on the outside - it's all solid and predictable. So I want smart functions, that you give them an instruction, a response schema and a bunch of tools and they will reliably do the one thing they are supposed to do. And if they can't - they will fail properly, ideally explaining why.
 
 So less like superintelligent "agents" and more like well trained puppies. You tell them what to do and they do it, bringing back exactly what you needed in the form you needed. Maybe in the future there is some pavlovian conditioning and training. But for now they are just like your average well trained dog: excitable, reliable, and not very smart.
 
@@ -129,7 +129,63 @@ print(response)
 
 ```
 
-## Examples
+## Error types and error handling
+
+SmartPup uses a structured error system through the `PupError` class. There are two main error types:
+
+1. **Technical Errors** (`PupError.TECHNICAL`): System or API-level issues
+   - `INVALID_JSON`: Failed to parse JSON response
+   - `SCHEMA_VIOLATION`: Response didn't match expected schema
+   - `MISSING_REQUIREMENTS`: Missing required tools or configuration
+
+2. **Cognitive Errors** (`PupError.COGNITIVE`): LLM understanding or capability issues
+   - `UNCERTAIN`: The pup is unsure and chooses to bail
+
+### Example Error Handling
+
+```python
+from smartpup import Pup, PupError
+
+async def main():
+    weather_pup = Pup(
+        instructions="You are a weather assistant...",
+        tools=registry.get_tools(["get_current_weather"])
+    )
+
+    try:
+        response = await weather_pup.run("What's the weather in Amsterdam?")
+        print(response)
+    except PupError as e:
+        if e.type == PupError.COGNITIVE:
+            print(f"Pup was uncertain: {e.message}")
+        elif e.type == PupError.TECHNICAL:
+            print(f"Technical error ({e.subtype}): {e.message}")
+            if e.details:  # Additional error context
+                print(f"Details: {e.details}")
+        else:
+            print(f"Unknown error: {e}")
+```
+
+### BAIL Responses
+
+Pups are designed to fail gracefully using the BAIL mechanism when they:
+- Cannot complete a task with available information
+- Receive unclear or ambiguous requests
+- Are unsure about any aspect of the task
+- Are asked to perform tasks outside their role
+
+When a pup bails, it raises a `PupError` with type `COGNITIVE` and subtype `UNCERTAIN`, including a clear explanation message.
+
+### Error Details
+
+All `PupError` instances include:
+- `type`: Main error category (`TECHNICAL` or `COGNITIVE`)
+- `subtype`: Specific error type (e.g., `INVALID_JSON`, `UNCERTAIN`)
+- `message`: Human-readable error description
+- `details`: Optional dictionary with additional context
+
+
+## Usage Examples
 
 Check the [examples](https://github.com/georgestrakhov/smartpup/tree/main/examples) directory for more usage examples:
 - Basic weather reporting
