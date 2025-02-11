@@ -45,7 +45,7 @@ async def main():
     
     # Create calculator pup
     calculator_pup = Pup(
-        system_prompt="You are a math assistant. Use the calculator tool to perform calculations.",
+        instructions="You are a math assistant. Use the calculator tool to perform calculations.",
         tools=registry.get_tools(["calculator"])
     )
 

@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "smartpup"
-version = "0.1.1"
+version = "0.1.11"
 authors = [
   { name="George Strakhov", email="george.strakhov@gmail.com" },
 ]
-description = "A minimalistic framework for building reliable AI agents"
+description = "A minimalistic "anti-agentic" framework for building reliable AI puppies"
 readme = "README.md"
 requires-python = ">=3.11"
 classifiers = [

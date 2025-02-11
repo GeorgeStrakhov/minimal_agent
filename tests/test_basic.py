@@ -29,7 +29,7 @@ def registry():
 async def test_basic_tool_execution(registry):
     """Test that a pup can use a basic tool"""
     pup = Pup(
-        system_prompt="You are an echo bot. Use the echo tool to repeat what the user says.",
+        instructions="You are an echo bot. Use the echo tool to repeat what the user says.",
         tools=registry.get_tools(["echo"])
     )
     

@@ -17,7 +17,7 @@ load_dotenv()
 class Pup:
     def __init__(
         self,
-        system_prompt: str,
+        instructions: str,
         json_response: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
@@ -29,7 +29,7 @@ class Pup:
         Initialize a new Pup.
         
         Args:
-            system_prompt: The system prompt that defines the pup's behavior
+            instructions: The system prompt that defines the pup's behavior
             json_response: Optional schema for validating JSON responses
             base_url: OpenAI API base URL (defaults to config or env OPENROUTER_BASE_URL)
             api_key: OpenAI API key (defaults to config or env OPENROUTER_API_KEY)
@@ -67,7 +67,7 @@ class Pup:
         Remember: It's better to bail clearly than to guess wildly or ask for clarification.
         """
         
-        self.system_prompt = system_prompt + "\n\n" + bail_instruction
+        self.system_prompt = instructions + "\n\n" + bail_instruction
         self.model = model or config.default_model
         self.max_iterations = max_iterations or config.max_iterations
         

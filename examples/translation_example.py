@@ -8,7 +8,7 @@ async def main():
     
     # Create translator pup
     translator = Pup(
-        system_prompt="You are a translator. Translate the given text to the requested language.",
+        instructions="You are a translator. Translate the given text to the requested language.",
         tools=registry.get_tools(["translate"])
     )
 

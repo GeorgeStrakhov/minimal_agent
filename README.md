@@ -4,7 +4,7 @@
 
 # SmartPup
 
-A minimalistic framework for building reliable AI agents (pups) that do exactly what you tell them to do, without extra magic.
+A minimalistic "anti-agentic" framework for building reliable AI puppies that do exactly what you tell them to do, without extra magic. Give them some instructions, a response schema and a bunch of tools - and they will run off and do it. Or at least they will try and will bail clearly if they can't.
 
 ## Why?
 
@@ -40,7 +40,7 @@ async def main():
     
     # Create a weather pup
     weather_pup = Pup(
-        system_prompt="You are a weather assistant. Check the weather and report it as a short poem.",
+        instructions="You are a weather assistant. Check the weather and report it as a short poem.",
         tools=registry.get_tools(["get_current_weather"])
     )
 
@@ -62,10 +62,29 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 
 ## Built-in Tools
 
-- **Weather**: Get current weather for any location
-- **DateTime**: Get current date/time in various formats
-- **Memory**: Simple key-value storage for persistence
-- **Translate**: Text translation between languages
+- **get_current_weather**: Get current weather for any location
+- **get_datetime**: Get current date/time in various formats
+- **memory**: Simple key-value storage for persistence
+- **translate**: Text translation between languages
+
+You can list all available tools and their parameters programmatically:
+
+```python
+from smartpup import ToolRegistry
+
+# Initialize registry and discover tools
+registry = ToolRegistry()
+registry.discover_tools()
+
+# Get list of all available tools with their descriptions and parameters
+tools = registry.list_tools()
+for tool in tools:
+    print(f"\n{tool['name']}: {tool['description']}")
+    print("Parameters:")
+    for param_name, param_info in tool['parameters'].items():
+        default = f" (default: {param_info['default']})" if param_info['default'] != 'None' else ''
+        print(f"  - {param_name}: {param_info['type']}{default}")
+```
 
 ## Creating Custom Tools
 
@@ -97,11 +116,22 @@ class CalculatorTool(BaseTool):
 # Register and use the tool
 registry = ToolRegistry()
 registry.register_tool(CalculatorTool)
+
+
+# Now you can use this tool in a pup
+pup = Pup(
+    instructions="You are a calculator. Use the calculator tool to perform calculations and return back the result, spelled out in letters.",
+    tools=registry.get_tools(["calculator"])
+)
+
+response = await pup.run("What is 15 plus 10?")
+print(response)
+
 ```
 
 ## Examples
 
-Check the [examples](examples/) directory for more usage examples:
+Check the [examples](https://github.com/georgestrakhov/smartpup/tree/main/examples) directory for more usage examples:
 - Basic weather reporting
 - Translation service
 - Memory usage
@@ -142,4 +172,4 @@ SmartPup is built on these principles:
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](https://github.com/georgestrakhov/smartpup/blob/main/LICENSE) for details.

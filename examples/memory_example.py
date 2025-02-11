@@ -8,7 +8,7 @@ async def main():
     
     # Create memory pup
     memory_pup = Pup(
-        system_prompt="You are an system that can remembers things about the user. Use the remember tool to store information. Store using 'remember' tool with the relevant key (e.g. 'favorite_color') and value (e.g. 'black'). Respond with a confirmation. If the user asks for information, use the recall tool to retrieve it, providing the key (e.g. 'favorite_color') and the value will be returned.",
+        instructions="You are an system that can remembers things about the user. Use the remember tool to store information. Store using 'remember' tool with the relevant key (e.g. 'favorite_color') and value (e.g. 'black'). Respond with a confirmation. If the user asks for information, use the recall tool to retrieve it, providing the key (e.g. 'favorite_color') and the value will be returned.",
         tools=registry.get_tools(["remember", "recall"])
     )
 

@@ -8,7 +8,7 @@ async def main():
     
     # Create weather pup
     weather_pup = Pup(
-        system_prompt="You are a weather assistant. Check the weather and report it as a short poem.",
+        instructions="You are a weather assistant. Check the weather and report it as a short poem.",
         tools=registry.get_tools(["get_current_weather"])
     )
 
