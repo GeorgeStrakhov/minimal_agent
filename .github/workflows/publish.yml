@@ -4,7 +4,7 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - 'v*'  # Triggers on version tags
+      - 'v*.*.*'  # Triggers on version tags with semantic versioning
 
 jobs:
   publish:

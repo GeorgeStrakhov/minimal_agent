@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "smartpup"
-version = "0.1.12"
+version = "0.1.13"
 authors = [
   { name="George Strakhov", email="george.strakhov@gmail.com" },
 ]
