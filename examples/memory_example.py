@@ -19,7 +19,7 @@ async def main():
     # This should store the information into the file specified in the config or by default memory.json
 
     # Retrieve the information
-    response = await memory_pup.run("What is my favorite color?")
+    response = await memory_pup.run("What is my favorite color? Use the recall tool to retrieve the information using relevant key, e.g. 'favorite_color'")
     print(f"Response: {response}")
 
 if __name__ == "__main__":

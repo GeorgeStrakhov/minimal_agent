@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 from .errors import PupError
 from .config import config
 from pydantic import BaseModel, create_model
+from .tools.base import BaseTool
+from .tools.registry import ToolRegistry
 
 load_dotenv()
 
@@ -18,25 +20,33 @@ class Pup:
     def __init__(
         self,
         instructions: str,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
         json_response: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
         max_iterations: Optional[int] = None,
-        tools: Optional[Dict[str, Dict[str, Any]]] = None
+        tools: Optional[Dict[str, Dict[str, Any]]] = None,
+        temperature: Optional[float] = 0.7
     ):
         """
         Initialize a new Pup.
         
         Args:
             instructions: The system prompt that defines the pup's behavior
+            name: Optional name for the pup
+            description: Optional description for the pup
             json_response: Optional schema for validating JSON responses
             base_url: OpenAI API base URL (defaults to config or env OPENROUTER_BASE_URL)
             api_key: OpenAI API key (defaults to config or env OPENROUTER_API_KEY)
             model: Model to use for completions (defaults to config default_model)
             max_iterations: Maximum number of tool call iterations (defaults to config max_iterations)
             tools: Optional dictionary of tool configurations containing schemas and functions
+            temperature: Optional temperature setting for model responses (0.0 to 2.0)
         """
+        self.name = name
+        self.description = description
         self.base_url = base_url or config.openrouter_base_url or os.getenv("OPENROUTER_BASE_URL")
         self.api_key = api_key or config.openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
         
@@ -75,9 +85,12 @@ class Pup:
         self.json_response = None
         self.response_format = None
         
+        # Store the original Pydantic model class if provided
+        self.pydantic_model = json_response if isinstance(json_response, type) and issubclass(json_response, BaseModel) else None
+        
         if json_response:
             # Convert json_response schema or Pydantic model to OpenAI format
-            if isinstance(json_response, type) and issubclass(json_response, BaseModel):
+            if self.pydantic_model:
                 self.json_response = json_response.model_json_schema()
             else:
                 self.json_response = json_response
@@ -96,6 +109,8 @@ class Pup:
         self.tools = tools
         self.tool_schemas = [t['schema'] for t in tools.values()] if tools else None
         self.tool_functions = {name: t['function'] for name, t in tools.items()} if tools else None
+        
+        self.temperature = temperature
         
         logger.debug("Pup initialized with model: {} and max_iterations: {}", 
                     self.model, self.max_iterations)
@@ -152,7 +167,7 @@ class Pup:
         self,
         user_message: str,
         tools: Optional[Dict[str, Dict[str, Any]]] = None
-    ) -> Union[str, Dict[str, Any]]:
+    ) -> Union[str, Dict[str, Any], BaseModel]:
         """
         Run a conversation with the given user message and optional tools.
         
@@ -161,7 +176,10 @@ class Pup:
             tools: Optional dictionary of tool configurations to override instance tools
             
         Returns:
-            The final response, either as a string or JSON object
+            The final response as either:
+            - A string (if no json_response specified)
+            - A dict (if json_response is a schema dict)
+            - A Pydantic model instance (if json_response is a Pydantic model class)
         """
         try:
             # Use instance tools if not overridden by run arguments
@@ -195,6 +213,8 @@ class Pup:
                     completion_args["tools"] = tool_schemas
                 if self.response_format:
                     completion_args["response_format"] = self.response_format
+                if self.temperature is not None:
+                    completion_args["temperature"] = self.temperature
                 
                 # Log the completion arguments
                 logger.debug("Sending completion request with args: {}", 
@@ -236,6 +256,10 @@ class Pup:
                             # Parse and validate JSON
                             cleaned_data = json.loads(content)
                             validate_json(instance=cleaned_data, schema=self.json_response)
+                            
+                            # Convert to Pydantic model if specified
+                            if self.pydantic_model:
+                                return self.pydantic_model(**cleaned_data)
                             return cleaned_data
                         except (json.JSONDecodeError, ValidationError) as e:
                             logger.error("Response validation failed: {}", e)
@@ -331,3 +355,52 @@ class Pup:
                 message="Unexpected error",
                 details={"error": str(e)}
             ) from e 
+
+    def as_tool(self, tool_name: Optional[str] = None, tool_description: Optional[str] = None) -> Type[BaseTool]:
+        """
+        Create a tool class from this pup.
+        
+        Args:
+            tool_name: Override the tool name (defaults to pup's name)
+            tool_description: Override the tool description (defaults to pup's description)
+            
+        Returns:
+            A new BaseTool subclass that wraps this pup
+        """
+        pup = self  # Capture self reference for closure
+        
+        class PupTool(BaseTool):
+            name = tool_name or pup.name or f"unnamed_pup_{id(pup)}"
+            description = tool_description or pup.description or "No description provided"
+            
+            async def execute(self, prompt: str) -> str:
+                """
+                Run the pup with the given prompt
+                
+                Args:
+                    prompt: The input prompt for the pup
+                """
+                result = await pup.run(prompt)
+                
+                # If result is a Pydantic model, convert to JSON
+                if isinstance(result, BaseModel):
+                    return result.model_dump_json(indent=4)
+                # If result is a dict, convert to JSON string
+                elif isinstance(result, dict):
+                    return json.dumps(result, indent=4)
+                # Otherwise return as string
+                return str(result)
+                
+        return PupTool
+
+    def register_as_tool(self, registry: ToolRegistry, tool_name: Optional[str] = None, tool_description: Optional[str] = None):
+        """
+        Register this pup as a tool in the given registry
+        
+        Args:
+            registry: The ToolRegistry to register with
+            tool_name: Override the tool name (defaults to pup's name)
+            tool_description: Override the tool description (defaults to pup's description)
+        """
+        tool_class = self.as_tool(tool_name=tool_name, tool_description=tool_description)
+        registry.register_tool(tool_class) 

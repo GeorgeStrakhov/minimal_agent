@@ -1,6 +1,7 @@
 import asyncio
 from smartpup import Pup, ToolRegistry, BaseTool
 
+# Example of creating a custom tool
 class CalculatorTool(BaseTool):
     name = "calculator"
     description = "Perform basic arithmetic operations"
@@ -39,18 +40,20 @@ class CalculatorTool(BaseTool):
             return f"Error performing calculation: {str(e)}"
 
 async def main():
-    # Initialize and register tool
+    # Initialize registry
     registry = ToolRegistry()
+    
+    # Register the calculator tool
     registry.register_tool(CalculatorTool)
     
-    # Create calculator pup
+    # Create a pup that uses the calculator
     calculator_pup = Pup(
-        instructions="You are a math assistant. Use the calculator tool to perform calculations.",
+        instructions="You are a math tutor. Use the calculator tool to solve problems.",
         tools=registry.get_tools(["calculator"])
     )
 
-    # Run one calculation
-    response = await calculator_pup.run("What is 15 divided by 0.3?")
+    # Run some calculations
+    response = await calculator_pup.run("What is 15 divided by 0.32?")
     print(f"Answer: {response}")
 
 if __name__ == "__main__":

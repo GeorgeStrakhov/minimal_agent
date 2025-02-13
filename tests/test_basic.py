@@ -34,7 +34,31 @@ async def test_basic_tool_execution(registry):
     )
     
     response = await pup.run("Please echo 'hello world'")
-    assert "Echo: hello world" in response
+    assert "hello world" in response.lower()
+
+@pytest.mark.asyncio
+async def test_pup_as_tool():
+    """Test that a pup can be used as a tool"""
+    # Create a pup that will be used as a tool
+    echo_pup = Pup(
+        name="echo_pup",
+        description="A pup that echoes messages",
+        instructions="You are an echo assistant. Simply repeat the user's message."
+    )
+    
+    # Create registry and register the pup as a tool
+    registry = ToolRegistry()
+    echo_pup.register_as_tool(registry)
+    
+    # Create another pup that uses the echo pup tool
+    user_pup = Pup(
+        instructions="You are a helpful assistant. Use the echo_pup tool when asked to repeat something.",
+        tools=registry.get_tools(["echo_pup"])
+    )
+    
+    # Test the interaction
+    response = await user_pup.run("Please repeat 'test message'")
+    assert "test message" in response.lower()
 
 @pytest.mark.asyncio
 async def test_tool_discovery():

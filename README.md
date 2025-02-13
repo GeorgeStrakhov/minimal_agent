@@ -32,24 +32,105 @@ pip install smartpup
 ```python
 import asyncio
 from smartpup import Pup, ToolRegistry
+from pydantic import BaseModel
+
+# Define the expected response format
+class WeatherReport(BaseModel):
+    temperature: float
+    conditions: str
+    summary: str
+    location: str
 
 async def main():
-    # Initialize tools
+    # Initialize and get weather tool
     registry = ToolRegistry()
     registry.discover_tools()
     
-    # Create a weather pup
+    # Create weather pup that uses the built-in weather tool
     weather_pup = Pup(
-        instructions="You are a weather assistant. Check the weather and report it as a short poem.",
-        tools=registry.get_tools(["get_current_weather"])
+        instructions="You are a weather assistant. Check the weather and provide a structured report.",
+        tools=registry.get_tools(["get_current_weather"]),
+        json_response=WeatherReport
     )
 
     # Get weather
     response = await weather_pup.run("What's the weather in Amsterdam?")
-    print(response)
+    print(f"\nWeather in {response.location}:")
+    print(f"Temperature: {response.temperature}°C")
+    print(f"Conditions: {response.conditions}")
+    print(f"Summary: {response.summary}")
 
 if __name__ == "__main__":
     asyncio.run(main())
+```
+
+## Response Schemas
+
+SmartPup supports three types of responses:
+
+1. **Plain Text**: Default behavior when no schema is specified
+2. **Pydantic Models**: The recommended way to enforce typed responses
+
+### Using Pydantic Models (Recommended)
+
+```python
+from pydantic import BaseModel
+from typing import List, Optional
+
+# Define your response model
+class WeatherForecast(BaseModel):
+    current_temp: float
+    feels_like: float
+    conditions: str
+    hourly_forecast: List[str]
+    warnings: Optional[List[str]] = None
+
+# Create pup with typed response
+weather_pup = Pup(
+    instructions="You are a detailed weather forecaster...",
+    tools=registry.get_tools(["get_current_weather"]),
+    json_response=WeatherForecast  # Pup will return WeatherForecast instances
+)
+
+# Get typed response
+forecast = await weather_pup.run("What's the weather forecast for Tokyo?")
+print(f"Temperature: {forecast.current_temp}°C")
+print(f"Feels like: {forecast.feels_like}°C")
+print(f"Conditions: {forecast.conditions}")
+
+# Access list fields
+for hour in forecast.hourly_forecast:
+    print(f"- {hour}")
+
+# Safe access to optional fields
+if forecast.warnings:
+    for warning in forecast.warnings:
+        print(f"Warning: {warning}")
+```
+
+Benefits of using Pydantic models:
+- Type safety and validation
+- IDE autocompletion support
+- Clear response structure documentation
+- Automatic conversion of JSON to Python objects
+- Optional fields with default values
+- Nested models and complex types
+
+### Error Handling with Schemas
+
+When using response schemas, SmartPup will raise a `PupError` if:
+- The response doesn't match the schema (`PupError.SCHEMA_VIOLATION`)
+- The JSON is malformed (`PupError.INVALID_JSON`)
+
+```python
+try:
+    response = await weather_pup.run("What's the weather in Paris?")
+    print(f"Temperature: {response.temperature}°C")
+except PupError as e:
+    if e.subtype == PupError.SCHEMA_VIOLATION:
+        print(f"Response didn't match expected format: {e.message}")
+    elif e.subtype == PupError.INVALID_JSON:
+        print(f"Couldn't parse response as JSON: {e.message}")
 ```
 
 ## Environment Setup
@@ -88,6 +169,13 @@ for tool in tools:
 
 ## Creating Custom Tools
 
+SmartPup supports two ways of creating tools:
+
+1. **Regular Tools**: For well-defined operations with specific parameters
+2. **Pup as Tool**: For more flexible, natural language interactions and hierarchical multi-agent interactions
+
+### Method 1: Regular Tool Implementation
+
 ```python
 from smartpup import BaseTool
 
@@ -113,21 +201,54 @@ class CalculatorTool(BaseTool):
             return f"Result: {a + b}"
         # ... other operations ...
 
-# Register and use the tool
+# Register the tool
 registry = ToolRegistry()
 registry.register_tool(CalculatorTool)
 
-
-# Now you can use this tool in a pup
-pup = Pup(
-    instructions="You are a calculator. Use the calculator tool to perform calculations and return back the result, spelled out in letters.",
+# Now you can give it to a pup like you would normally do
+math_solver = Pup(
+    instructions="You are a math tutor. Use the calculator tool to solve problems.",
     tools=registry.get_tools(["calculator"])
 )
-
-response = await pup.run("What is 15 plus 10?")
-print(response)
-
 ```
+
+### Method 2: Pup as Tool
+
+```python
+from smartpup import Pup
+
+# Create a pup that can be used as a tool
+text_calculator = Pup(
+    name="text_calculator", # pay attention to the name - this is the name that will be used to call the tool. avoid name crashes. recommended to use namespacing / prefixing. e.g. "myproj_text_calculator"
+    description="Convert text math problems into calculations",
+    instructions="You are a math assistant that converts text problems into calculator operations."
+)
+
+# Register the pup as a tool
+registry = ToolRegistry()
+text_calculator.register_as_tool(registry)
+
+# Use both tools in another pup
+math_solver = Pup(
+    instructions="You are a math tutor. Use the text_calculator tool to show the user how to perform calculations.",
+    tools=registry.get_tools(["text_calculator"])
+)
+```
+
+### When to Use Each Method
+
+- Use **Regular Tools** when:
+  - The operation has well-defined inputs and outputs
+  - You need strict parameter validation
+  - Performance is critical
+  - The operation involves external APIs or systems
+
+- Use **Pup as Tool** when:
+  - When you are building a hierarchical multi-agent system
+  - You need natural language understanding
+  - The operation is more flexible or fuzzy
+  - The tool needs to handle varied input formats
+  - You want to chain capabilities
 
 ## Error types and error handling
 
@@ -217,14 +338,6 @@ cd smartpup
 pip install -e ".[dev]"
 pytest  # Run tests
 ```
-
-## Philosophy
-
-SmartPup is built on these principles:
-1. **One Task at a Time**: Each pup does one specific thing
-2. **No Magic**: Clear, predictable behavior without hidden complexity
-3. **Tool-First**: Tools provide clear interfaces for agent capabilities
-4. **Independent Requests**: No conversation history or context bleeding
 
 ## License
 
