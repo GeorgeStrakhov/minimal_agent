@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Dict, Type, List, Union, Optional
 import importlib.util
 import inspect
-from .base import BaseTool
+from .base import BaseTool, ToolConfig
 from loguru import logger
 
 class ToolRegistry:
@@ -20,7 +20,7 @@ class ToolRegistry:
         """
         if tools_dir is None:
             # Use the builtin tools directory
-            tools_dir = Path(__file__).parent / "builtin"
+            tools_dir = Path(__file__).parent
         else:
             tools_dir = Path(tools_dir)
         logger.info(f"Searching for tools in: {tools_dir}")
@@ -31,14 +31,19 @@ class ToolRegistry:
         
         # Recursively find all Python files
         for file in tools_dir.rglob("*.py"):
-            # Skip __init__.py and base files
-            if file.name.startswith("_") or file.name == "base_tool.py" or file.name == "registry.py":
+            # Skip __init__.py files and utility modules
+            if (file.name.startswith("_") or 
+                file.name in ["base.py", "registry.py", "env.py"] or
+                file.parent.name.startswith("_")):
                 logger.debug(f"Skipping file: {file}")
                 continue
             
             try:
-                # Force reload the module to pick up new environment variables
-                module_name = str(file.relative_to(tools_dir).with_suffix("")).replace("/", ".")
+                # Build the module name relative to the tools directory
+                rel_path = file.relative_to(tools_dir)
+                module_parts = list(rel_path.parent.parts) + [rel_path.stem]
+                module_name = "smartpup.tools." + ".".join(module_parts)
+                
                 logger.debug(f"Attempting to load module: {module_name} from {file}")
                 
                 spec = importlib.util.spec_from_file_location(module_name, str(file))
@@ -69,12 +74,12 @@ class ToolRegistry:
                 import traceback
                 logger.error(traceback.format_exc())
     
-    def register_tool(self, tool_class: Type[BaseTool]):
-        """Register a new tool class"""
+    def register_tool(self, tool_class: Type[BaseTool], config: Optional[ToolConfig] = None):
+        """Register a new tool class with optional configuration"""
         try:
-            # Only instantiate if we haven't already
-            if tool_class.name not in self._tool_instances:
-                self._tool_instances[tool_class.name] = tool_class()
+            # Only instantiate if we haven't already or if new config provided
+            if tool_class.name not in self._tool_instances or config is not None:
+                self._tool_instances[tool_class.name] = tool_class(config=config)
             
             self.tools[tool_class.name] = tool_class
             logger.info(f"Successfully registered tool: {tool_class.name}")
@@ -153,4 +158,19 @@ class ToolRegistry:
             }
             tool_list.append(tool_info)
             
-        return tool_list 
+        return tool_list
+
+    def configure_tool(self, tool_name: str, config: Dict):
+        """Configure an existing tool with new settings"""
+        if tool_name not in self.tools:
+            raise ValueError(f"Tool {tool_name} not found")
+        
+        tool_class = self.tools[tool_name]
+        if not tool_class.config_class:
+            raise ValueError(f"Tool {tool_name} does not support configuration")
+        
+        # Create config instance from dict
+        config_instance = tool_class.config_class.model_validate(config)
+        
+        # Re-register tool with new config
+        self.register_tool(tool_class, config=config_instance) 

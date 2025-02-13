@@ -6,14 +6,28 @@ from loguru import logger
 from enum import Enum
 from .env import ToolEnv, EnvVar
 
+class ToolConfig(BaseModel):
+    """Base configuration class for tools"""
+    pass
+
 class BaseTool:
     name: str
     description: str
     env: ClassVar[Optional[ToolEnv]] = None
+    config_class: ClassVar[Optional[Type[ToolConfig]]] = None
     
-    def __init__(self):
+    def __init__(self, config: Optional[ToolConfig] = None):
         if not hasattr(self, 'name') or not hasattr(self, 'description'):
             raise ValueError(f"Tool {self.__class__.__name__} must define 'name' and 'description'")
+        
+        # Handle configuration
+        if config is not None:
+            if not isinstance(config, (self.config_class or ToolConfig)):
+                raise ValueError(f"Config must be instance of {self.config_class}")
+            self.config = config
+        elif self.config_class is not None:
+            # Try to load from environment if no config provided
+            self.config = self.config_class.model_validate({})
             
         # Validate environment variables if defined
         if self.env:
@@ -30,7 +44,9 @@ class BaseTool:
     @classmethod
     def _get_type_schema(cls, param_type: Type) -> Dict[str, Any]:
         """Convert Python type to JSON schema type"""
-        if param_type == str:
+        if param_type is None:
+            return {"type": "string"}  # Default to string for unknown types
+        elif param_type == str:
             return {"type": "string"}
         elif param_type == int:
             return {"type": "integer"}
@@ -52,9 +68,16 @@ class BaseTool:
                 type(None) in param_type.__args__):
                 inner_type = next(t for t in param_type.__args__ if t is not type(None))
                 return cls._get_type_schema(inner_type)
-        else:
-            logger.warning(f"Unsupported type {param_type}, defaulting to string")
-            return {"type": "string"}
+            # Handle List types
+            elif param_type.__origin__ is list:
+                inner_type = param_type.__args__[0]
+                return {
+                    "type": "array",
+                    "items": cls._get_type_schema(inner_type)
+                }
+    
+        logger.warning(f"Unsupported type {param_type}, defaulting to string")
+        return {"type": "string"}
     
     @classmethod
     def _get_parameter_schema(cls, hints: Dict[str, Type], docstring: str) -> Dict[str, Any]:

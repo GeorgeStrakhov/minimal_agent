@@ -1,8 +1,14 @@
-from smartpup.tools.base import BaseTool
-from smartpup.tools.env import ToolEnv, EnvVar
+from smartpup.tools.base import BaseTool, ToolConfig
 from pydantic import BaseModel, Field
 import json
 import os
+from typing import Optional
+
+class MemoryConfig(ToolConfig):
+    memory_file: str = Field(
+        default_factory=lambda: os.getenv("MEMORY_FILE", "data/memory.json"),
+        description="Path to the memory storage file"
+    )
 
 class MemoryItem(BaseModel):
     key: str = Field(..., min_length=1, description="The key to store the value under")
@@ -11,16 +17,10 @@ class MemoryItem(BaseModel):
 class RememberTool(BaseTool):
     name = "remember"
     description = "Save information to memory for future use"
+    config_class = MemoryConfig
     
-    # Define environment configuration
-    env = ToolEnv([
-        EnvVar("MEMORY_FILE", "Path to the memory storage file", required=False)
-    ])
-    
-    def __init__(self, memory_file: str = None):
-        super().__init__()
-        # Use provided file path, env var, or default
-        self.memory_file = memory_file or os.getenv("MEMORY_FILE") or "memory.json"
+    def __init__(self, config: Optional[MemoryConfig] = None):
+        super().__init__(config=config)
     
     async def execute(
         self,
@@ -42,8 +42,8 @@ class RememberTool(BaseTool):
         
         try:
             # Load existing memory
-            if os.path.exists(self.memory_file):
-                with open(self.memory_file, 'r') as f:
+            if os.path.exists(self.config.memory_file):
+                with open(self.config.memory_file, 'r') as f:
                     memory = json.load(f)
             else:
                 memory = {}
@@ -52,7 +52,7 @@ class RememberTool(BaseTool):
             memory[item.key] = item.value
             
             # Save memory
-            with open(self.memory_file, 'w') as f:
+            with open(self.config.memory_file, 'w') as f:
                 json.dump(memory, f, indent=2)
             
             return f"Successfully saved: {item.key} = {item.value}"
