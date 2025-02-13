@@ -30,13 +30,8 @@ class GetDateTimeTool(BaseTool):
         """
         try:
             if timezone:
-                try:
-                    from zoneinfo import ZoneInfo
-                    current = datetime.now(ZoneInfo(timezone))
-                except ImportError:
-                    # Fallback for Python < 3.9
-                    from pytz import timezone as pytz_timezone
-                    current = datetime.now(pytz_timezone(timezone))
+                from zoneinfo import ZoneInfo
+                current = datetime.now(ZoneInfo(timezone))
             else:
                 current = datetime.now()
 
